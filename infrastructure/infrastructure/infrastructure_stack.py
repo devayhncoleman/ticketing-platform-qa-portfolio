@@ -171,9 +171,9 @@ class InfrastructureStack(Stack):
                 stage_name="dev",
                 throttling_rate_limit=100,
                 throttling_burst_limit=200,
+                logging_level=apigw.MethodLoggingLevel.INFO,
+                data_trace_enabled=True,
                 metrics_enabled=True
-                # CloudWatch logging disabled - requires additional IAM role setup
-                # Can be enabled later: logging_level=apigw.MethodLoggingLevel.INFO
             ),
             default_cors_preflight_options=apigw.CorsOptions(
                 allow_origins=apigw.Cors.ALL_ORIGINS,
