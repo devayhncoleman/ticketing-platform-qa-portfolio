@@ -22,7 +22,8 @@ class TestCreateTicket:
                 'title': 'Login Issue',
                 'description': 'Cannot access my account',
                 'priority': 'HIGH'
-            })
+            }),
+            'requestContext': {}
         }
         
         # Act
@@ -36,6 +37,7 @@ class TestCreateTicket:
         assert body['description'] == 'Cannot access my account'
         assert body['status'] == 'OPEN'
         assert body['priority'] == 'HIGH'
+        assert body['assignedTo'] == 'UNASSIGNED'
         assert 'createdAt' in body
     
     def test_create_ticket_without_title_returns_400(self):
@@ -48,7 +50,8 @@ class TestCreateTicket:
         event = {
             'body': json.dumps({
                 'description': 'Some description'
-            })
+            }),
+            'requestContext': {}
         }
         
         # Act
@@ -70,7 +73,8 @@ class TestCreateTicket:
         event = {
             'body': json.dumps({
                 'title': 'Some title'
-            })
+            }),
+            'requestContext': {}
         }
         
         # Act
@@ -90,7 +94,8 @@ class TestCreateTicket:
         """
         # Arrange
         event = {
-            'body': 'not valid json'
+            'body': 'not valid json',
+            'requestContext': {}
         }
         
         # Act
@@ -101,18 +106,19 @@ class TestCreateTicket:
         assert response['statusCode'] == 400
         assert 'error' in body
     
-    def test_create_ticket_assigns_default_priority(self):
+    def test_create_ticket_assigns_defaults(self):
         """
-        GIVEN request without priority field
+        GIVEN request without priority or assignedTo
         WHEN create_ticket handler is called
-        THEN it should assign default priority of MEDIUM
+        THEN it should assign default values
         """
         # Arrange
         event = {
             'body': json.dumps({
                 'title': 'Test Ticket',
                 'description': 'Test Description'
-            })
+            }),
+            'requestContext': {}
         }
         
         # Act
@@ -120,7 +126,9 @@ class TestCreateTicket:
         body = json.loads(response['body'])
         
         # Assert
+        assert response['statusCode'] == 201
         assert body['priority'] == 'MEDIUM'
+        assert body['assignedTo'] == 'UNASSIGNED'
     
     def test_create_ticket_generates_unique_ticket_id(self):
         """
@@ -133,7 +141,8 @@ class TestCreateTicket:
             'body': json.dumps({
                 'title': 'Test Ticket',
                 'description': 'Test Description'
-            })
+            }),
+            'requestContext': {}
         }
         
         # Act
@@ -145,3 +154,28 @@ class TestCreateTicket:
         
         # Assert
         assert ticket1['ticketId'] != ticket2['ticketId']
+    
+    def test_create_ticket_with_invalid_priority_returns_400(self):
+        """
+        GIVEN request with invalid priority value
+        WHEN create_ticket handler is called
+        THEN it should return 400 with error message
+        """
+        # Arrange
+        event = {
+            'body': json.dumps({
+                'title': 'Test Ticket',
+                'description': 'Test Description',
+                'priority': 'SUPER_URGENT'  # Invalid priority
+            }),
+            'requestContext': {}
+        }
+        
+        # Act
+        response = handler(event, {})
+        body = json.loads(response['body'])
+        
+        # Assert
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'Invalid priority' in body['error']
