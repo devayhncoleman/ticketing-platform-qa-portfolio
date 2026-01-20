@@ -1,14 +1,16 @@
 """
-Lambda function handler for deleting tickets.
-DELETE /tickets/{id}
-Implements soft delete by default, with hard delete option for admins.
+Lambda handler for deleting tickets (soft and hard delete)
+Updated: Uses Cognito JWT for real user authentication and authorization
 """
 import json
 import os
+from datetime import datetime, timezone
 from typing import Dict, Any
 import boto3
 from botocore.exceptions import ClientError
 
+# Import auth utilities
+from auth import extract_user_from_event, UserContext
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -20,154 +22,94 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for DELETE /tickets/{id}
     
-    Soft delete: Sets status to CLOSED (default)
-    Hard delete: Permanently removes from DynamoDB (admin only, with ?hard=true)
+    Supports two modes:
+    - Soft delete (default): Sets status to CLOSED, preserves audit trail
+    - Hard delete (?hard=true): Permanently removes from database (ADMIN only)
     
-    Args:
-        event: API Gateway event with ticketId in path parameters
-        context: Lambda context
-    
-    Returns:
-        API Gateway response with 204 No Content on success
+    Authorization:
+    - Soft delete: User can delete their own tickets, agents can delete any
+    - Hard delete: Admin only
     """
     try:
-        # Extract ticket ID
-        path_params = event.get('pathParameters', {})
+        # Extract authenticated user from Cognito JWT
+        user = extract_user_from_event(event)
+        
+        # Get ticket ID from path
+        path_params = event.get('pathParameters') or {}
         ticket_id = path_params.get('id')
         
         if not ticket_id:
             return create_response(400, {'error': 'Ticket ID is required'})
         
-        # Check for hard delete flag
+        # Check if hard delete requested
         query_params = event.get('queryStringParameters') or {}
-        hard_delete = query_params.get('hard', 'false').lower() == 'true'
+        hard_delete = query_params.get('hard', '').lower() == 'true'
         
-        # Get user info
-        user_id = extract_user_id(event)
-        user_role = extract_user_role(event)
+        # Fetch existing ticket
+        response = table.get_item(Key={'ticketId': ticket_id})
+        existing_ticket = response.get('Item')
         
-        # Get existing ticket
-        try:
-            response = table.get_item(Key={'ticketId': ticket_id})
-        except ClientError as e:
-            print(f"DynamoDB error: {e}")
-            return create_response(500, {'error': 'Failed to retrieve ticket'})
+        if not existing_ticket:
+            return create_response(404, {'error': f'Ticket {ticket_id} not found'})
         
-        if 'Item' not in response:
-            return create_response(404, {'error': 'Ticket not found'})
+        # Check authorization
+        if not user.can_delete_ticket(existing_ticket, hard_delete=hard_delete):
+            if hard_delete:
+                print(f"Access denied: User {user.email} cannot hard delete ticket {ticket_id}")
+                return create_response(403, {'error': 'Only administrators can permanently delete tickets'})
+            else:
+                print(f"Access denied: User {user.email} cannot delete ticket {ticket_id}")
+                return create_response(403, {'error': 'You do not have permission to delete this ticket'})
         
-        existing_ticket = response['Item']
-        
-        # Authorization check
-        if not is_authorized_to_delete(existing_ticket, user_id, user_role, hard_delete):
-            return create_response(403, {
-                'error': 'You are not authorized to delete this ticket'
-            })
-        
-        # Perform delete
         if hard_delete:
-            # Hard delete - permanently remove
-            try:
-                table.delete_item(
-                    Key={'ticketId': ticket_id},
-                    ConditionExpression='attribute_exists(ticketId)'
-                )
-                print(f"✅ HARD deleted ticket: {ticket_id} by user: {user_id}")
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                    return create_response(404, {'error': 'Ticket not found'})
-                raise
+            # Permanent deletion (Admin only)
+            table.delete_item(Key={'ticketId': ticket_id})
+            print(f"User {user.email} HARD DELETED ticket {ticket_id}")
+            return create_response(204, {})
         else:
             # Soft delete - set status to CLOSED
-            from datetime import datetime, timezone
             now = datetime.now(timezone.utc).isoformat()
             
-            try:
-                table.update_item(
-                    Key={'ticketId': ticket_id},
-                    UpdateExpression='SET #status = :status, #updatedAt = :updatedAt, #updatedBy = :updatedBy',
-                    ExpressionAttributeNames={
-                        '#status': 'status',
-                        '#updatedAt': 'updatedAt',
-                        '#updatedBy': 'updatedBy'
-                    },
-                    ExpressionAttributeValues={
-                        ':status': 'CLOSED',
-                        ':updatedAt': now,
-                        ':updatedBy': user_id
-                    },
-                    ConditionExpression='attribute_exists(ticketId)'
-                )
-                print(f"✅ SOFT deleted (closed) ticket: {ticket_id} by user: {user_id}")
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                    return create_response(404, {'error': 'Ticket not found'})
-                raise
+            table.update_item(
+                Key={'ticketId': ticket_id},
+                UpdateExpression='SET #status = :status, updatedAt = :updatedAt, updatedBy = :updatedBy, closedAt = :closedAt, closedBy = :closedBy',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={
+                    ':status': 'CLOSED',
+                    ':updatedAt': now,
+                    ':updatedBy': user.user_id,
+                    ':closedAt': now,
+                    ':closedBy': user.user_id
+                }
+            )
+            
+            print(f"User {user.email} soft deleted ticket {ticket_id}")
+            return create_response(204, {})
         
-        # Return 204 No Content (standard for successful DELETE)
-        return {
-            'statusCode': 204,
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-                'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
-            }
-        }
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        print(f"DynamoDB error: {error_code} - {e}")
+        return create_response(500, {'error': 'Failed to delete ticket'})
         
     except Exception as e:
-        print(f"❌ Unexpected error: {str(e)}")
+        print(f"Unexpected error: {str(e)}")
         return create_response(500, {'error': 'Internal server error'})
 
 
-def is_authorized_to_delete(
-    ticket: Dict[str, Any], 
-    user_id: str, 
-    user_role: str,
-    hard_delete: bool
-) -> bool:
-    """
-    Check if user is authorized to delete this ticket
-    
-    Rules:
-    - Hard delete: ADMIN only
-    - Soft delete:
-      - ADMIN: Can delete any ticket
-      - AGENT: Can delete any ticket
-      - CUSTOMER: Can only delete their own tickets
-    """
-    # Hard delete requires ADMIN
-    if hard_delete and user_role != 'ADMIN':
-        return False
-    
-    # Soft delete authorization
-    if user_role in ['ADMIN', 'AGENT']:
-        return True
-    
-    if user_role == 'CUSTOMER':
-        return ticket.get('createdBy') == user_id
-    
-    return False
-
-
-def extract_user_id(event: Dict[str, Any]) -> str:
-    """Extract user ID from JWT token"""
-    return event.get('requestContext', {}).get('authorizer', {}).get('claims', {}).get('sub', 'test-user-123')
-
-
-def extract_user_role(event: Dict[str, Any]) -> str:
-    """Extract user role from JWT token"""
-    return event.get('requestContext', {}).get('authorizer', {}).get('claims', {}).get('custom:role', 'CUSTOMER')
-
-
 def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    """Create standardized API Gateway response"""
-    return {
+    """Create standardized API Gateway response."""
+    # For 204 No Content, body should be empty
+    response = {
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
-        },
-        'body': json.dumps(body, default=str)
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+        }
     }
+    
+    if status_code != 204:
+        response['body'] = json.dumps(body, default=str)
+    
+    return response

@@ -1,13 +1,17 @@
 """
-Lambda function handler for listing tickets with filtering.
-GET /tickets?status=OPEN&assignedTo=agent-123&limit=20
+Lambda handler for listing tickets with filters and pagination
+Updated: Uses Cognito JWT for real user authentication and role-based filtering
 """
 import json
 import os
+import base64
 from typing import Dict, Any, Optional
 import boto3
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key, Attr
 
+# Import auth utilities
+from auth import extract_user_from_event, UserContext
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -18,184 +22,110 @@ table = dynamodb.Table(table_name)
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for GET /tickets
-    Lists tickets with optional filtering by status or assignedTo
+    Lists tickets with optional filters, pagination, and role-based access
     
-    Query parameters:
-    - status: Filter by ticket status (uses StatusIndex GSI)
-    - assignedTo: Filter by assigned agent (uses AssignedToIndex GSI)
-    - limit: Maximum number of results (default: 50, max: 100)
-    - cursor: Pagination token for next page
-    
-    Args:
-        event: API Gateway event with query parameters
-        context: Lambda context
-    
-    Returns:
-        API Gateway response with list of tickets
+    Query Parameters:
+        - status: Filter by status (uses StatusIndex GSI)
+        - assignedTo: Filter by assigned agent (uses AssignedToIndex GSI)
+        - limit: Max items per page (default 20, max 100)
+        - cursor: Pagination token for next page
+        
+    Authorization:
+        - ADMIN/AGENT: Can see all tickets
+        - CUSTOMER: Can only see their own tickets
     """
     try:
-        # Extract query parameters
-        query_params = event.get('queryStringParameters') or {}
-        status_filter = query_params.get('status')
-        assigned_to_filter = query_params.get('assignedTo')
-        limit = int(query_params.get('limit', '50'))
-        cursor = query_params.get('cursor')
+        # Extract authenticated user from Cognito JWT
+        user = extract_user_from_event(event)
         
-        # Validate limit
-        if limit > 100:
-            return create_response(400, {
-                'error': 'Limit cannot exceed 100'
-            })
+        # Parse query parameters
+        params = event.get('queryStringParameters') or {}
+        status_filter = params.get('status')
+        assigned_to_filter = params.get('assignedTo')
         
-        # Get user info
-        user_id = extract_user_id(event)
-        user_role = extract_user_role(event)
+        # Pagination
+        limit = min(int(params.get('limit', 20)), 100)
+        cursor = params.get('cursor')
         
-        # Execute appropriate query based on filters
-        if status_filter:
-            result = query_by_status(status_filter, limit, cursor)
-        elif assigned_to_filter:
-            result = query_by_assigned_to(assigned_to_filter, limit, cursor)
-        else:
-            # No filters - scan table (less efficient, but necessary)
-            result = scan_all_tickets(limit, cursor)
+        # Decode cursor if provided
+        exclusive_start_key = None
+        if cursor:
+            try:
+                decoded = base64.b64decode(cursor).decode('utf-8')
+                exclusive_start_key = json.loads(decoded)
+            except Exception as e:
+                print(f"Invalid cursor: {e}")
+                return create_response(400, {'error': 'Invalid pagination cursor'})
         
-        tickets = result.get('Items', [])
-        
-        # Apply role-based filtering
-        filtered_tickets = filter_tickets_by_role(tickets, user_id, user_role)
-        
-        # Prepare response with pagination
-        response_body = {
-            'tickets': filtered_tickets,
-            'count': len(filtered_tickets)
+        # Build scan/query parameters
+        scan_kwargs = {
+            'Limit': limit
         }
         
-        # Add pagination cursor if more results available
-        if 'LastEvaluatedKey' in result:
-            response_body['nextCursor'] = encode_cursor(result['LastEvaluatedKey'])
+        if exclusive_start_key:
+            scan_kwargs['ExclusiveStartKey'] = exclusive_start_key
         
-        print(f"✅ Listed {len(filtered_tickets)} tickets for user: {user_id} (role: {user_role})")
+        # Role-based filtering
+        if user.is_customer:
+            # Customers can only see their own tickets - use CreatedByIndex
+            scan_kwargs['IndexName'] = 'CreatedByIndex'
+            scan_kwargs['KeyConditionExpression'] = Key('createdBy').eq(user.user_id)
+            
+            # Add status filter if provided
+            if status_filter:
+                scan_kwargs['FilterExpression'] = Attr('status').eq(status_filter.upper())
+            
+            response = table.query(**scan_kwargs)
         
-        return create_response(200, response_body)
+        elif status_filter:
+            # Use StatusIndex GSI for status filtering
+            scan_kwargs['IndexName'] = 'StatusIndex'
+            scan_kwargs['KeyConditionExpression'] = Key('status').eq(status_filter.upper())
+            response = table.query(**scan_kwargs)
         
-    except ValueError as e:
-        return create_response(400, {'error': f'Invalid parameter: {str(e)}'})
-    
+        elif assigned_to_filter:
+            # Use AssignedToIndex GSI for assigned agent filtering
+            scan_kwargs['IndexName'] = 'AssignedToIndex'
+            scan_kwargs['KeyConditionExpression'] = Key('assignedTo').eq(assigned_to_filter)
+            response = table.query(**scan_kwargs)
+        
+        else:
+            # Full table scan (admins/agents with no filters)
+            response = table.scan(**scan_kwargs)
+        
+        tickets = response.get('Items', [])
+        
+        # Build response with pagination
+        result = {
+            'tickets': tickets,
+            'count': len(tickets)
+        }
+        
+        # Add next cursor if more results exist
+        if 'LastEvaluatedKey' in response:
+            next_cursor = base64.b64encode(
+                json.dumps(response['LastEvaluatedKey']).encode('utf-8')
+            ).decode('utf-8')
+            result['nextCursor'] = next_cursor
+            result['hasMore'] = True
+        else:
+            result['hasMore'] = False
+        
+        print(f"User {user.email} (role: {user.role}) listed {len(tickets)} tickets")
+        return create_response(200, result)
+        
     except ClientError as e:
         error_code = e.response['Error']['Code']
         print(f"DynamoDB error: {error_code} - {e}")
-        return create_response(500, {'error': 'Failed to retrieve tickets'})
-    
+        return create_response(500, {'error': 'Failed to list tickets'})
+        
     except Exception as e:
-        print(f"❌ Unexpected error: {str(e)}")
+        print(f"Unexpected error: {str(e)}")
         return create_response(500, {'error': 'Internal server error'})
 
 
-def query_by_status(status: str, limit: int, cursor: Optional[str]) -> Dict[str, Any]:
-    """
-    Query tickets by status using StatusIndex GSI
-    Returns tickets sorted by createdAt (newest first)
-    """
-    query_params = {
-        'IndexName': 'StatusIndex',
-        'KeyConditionExpression': '#status = :status',
-        'ExpressionAttributeNames': {'#status': 'status'},
-        'ExpressionAttributeValues': {':status': status.upper()},
-        'Limit': limit,
-        'ScanIndexForward': False  # Descending order (newest first)
-    }
-    
-    if cursor:
-        query_params['ExclusiveStartKey'] = decode_cursor(cursor)
-    
-    return table.query(**query_params)
-
-
-def query_by_assigned_to(assigned_to: str, limit: int, cursor: Optional[str]) -> Dict[str, Any]:
-    """
-    Query tickets by assignedTo using AssignedToIndex GSI
-    Returns tickets sorted by createdAt (newest first)
-    """
-    query_params = {
-        'IndexName': 'AssignedToIndex',
-        'KeyConditionExpression': 'assignedTo = :assignedTo',
-        'ExpressionAttributeValues': {':assignedTo': assigned_to},
-        'Limit': limit,
-        'ScanIndexForward': False
-    }
-    
-    if cursor:
-        query_params['ExclusiveStartKey'] = decode_cursor(cursor)
-    
-    return table.query(**query_params)
-
-
-def scan_all_tickets(limit: int, cursor: Optional[str]) -> Dict[str, Any]:
-    """
-    Scan all tickets (no filter)
-    Note: This is less efficient than queries, but necessary when no filter provided
-    In production, consider requiring at least one filter parameter
-    """
-    scan_params = {
-        'Limit': limit
-    }
-    
-    if cursor:
-        scan_params['ExclusiveStartKey'] = decode_cursor(cursor)
-    
-    return table.scan(**scan_params)
-
-
-def filter_tickets_by_role(tickets: list, user_id: str, user_role: str) -> list:
-    """
-    Filter tickets based on user role
-    
-    Rules:
-    - ADMIN: See all tickets
-    - AGENT: See all tickets
-    - CUSTOMER: See only tickets they created
-    """
-    if user_role in ['ADMIN', 'AGENT']:
-        return tickets
-    
-    if user_role == 'CUSTOMER':
-        return [t for t in tickets if t.get('createdBy') == user_id]
-    
-    # Unknown role - return empty list
-    return []
-
-
-def encode_cursor(last_key: Dict[str, Any]) -> str:
-    """
-    Encode LastEvaluatedKey as base64 cursor for pagination
-    """
-    import base64
-    cursor_json = json.dumps(last_key, default=str)
-    return base64.b64encode(cursor_json.encode()).decode()
-
-
-def decode_cursor(cursor: str) -> Dict[str, Any]:
-    """
-    Decode base64 cursor back to DynamoDB key
-    """
-    import base64
-    cursor_json = base64.b64decode(cursor.encode()).decode()
-    return json.loads(cursor_json)
-
-
-def extract_user_id(event: Dict[str, Any]) -> str:
-    """Extract user ID from JWT token"""
-    return event.get('requestContext', {}).get('authorizer', {}).get('claims', {}).get('sub', 'test-user-123')
-
-
-def extract_user_role(event: Dict[str, Any]) -> str:
-    """Extract user role from JWT token"""
-    return event.get('requestContext', {}).get('authorizer', {}).get('claims', {}).get('custom:role', 'CUSTOMER')
-
-
 def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    """Create standardized API Gateway response"""
+    """Create standardized API Gateway response."""
     return {
         'statusCode': status_code,
         'headers': {

@@ -1,6 +1,7 @@
 """
-Lambda function handler for creating tickets.
-FIXED VERSION - handles GSI requirements properly
+Lambda handler for creating tickets
+FIXED: VERSION - handles 400 requirements properly
+Updated: Uses Cognito JWT for real user authentication
 """
 import json
 import uuid
@@ -10,6 +11,8 @@ from typing import Dict, Any
 import boto3
 from botocore.exceptions import ClientError
 
+# Import auth utilities
+from auth import extract_user_from_event, UserContext
 
 # Initialize DynamoDB (connection reuse across Lambda invocations)
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -25,11 +28,14 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Args:
         event: API Gateway event with ticket data in body
         context: Lambda context
-    
+        
     Returns:
         API Gateway response with created ticket
     """
     try:
+        # Extract authenticated user from Cognito JWT
+        user = extract_user_from_event(event)
+        
         # Parse request body
         body = json.loads(event.get('body', '{}'))
         
@@ -54,7 +60,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Create ticket object
         ticket_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        user_id = extract_user_id(event)
         
         ticket = {
             'ticketId': ticket_id,
@@ -63,47 +68,36 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'status': 'OPEN',
             'priority': priority,
             'category': body.get('category', 'General'),
-            'createdBy': user_id,
+            'createdBy': user.user_id,  # Cognito user sub
+            'createdByEmail': user.email,  # User's email for display
             'createdAt': now,
             'updatedAt': now,
-            'updatedBy': user_id,
-            'assignedTo': body.get('assignedTo', 'UNASSIGNED'),  # ✅ Fixed: Default value
+            'updatedBy': user.user_id,
+            'assignedTo': body.get('assignedTo', 'UNASSIGNED'),
             'tags': body.get('tags', [])
         }
         
         # Save to DynamoDB
         table.put_item(Item=ticket)
         
-        print(f"✅ Created ticket: {ticket_id} in DynamoDB table: {table_name}")
-        
+        print(f"Created ticket {ticket_id} by user {user.email} in table {table_name}")
         return create_response(201, ticket)
         
     except json.JSONDecodeError:
         return create_response(400, {'error': 'Invalid JSON in request body'})
-    
+        
     except ClientError as e:
         error_code = e.response['Error']['Code']
-        print(f"❌ DynamoDB error: {error_code} - {e}")
+        print(f"DynamoDB error: {error_code} - {e}")
         return create_response(500, {'error': 'Failed to create ticket'})
-    
+        
     except Exception as e:
-        print(f"❌ Unexpected error: {str(e)}")
+        print(f"Unexpected error: {str(e)}")
         return create_response(500, {'error': 'Internal server error'})
 
 
-def extract_user_id(event: Dict[str, Any]) -> str:
-    """
-    Extract user ID from JWT token in event
-    For now, returns test user ID
-    TODO: Implement real JWT parsing when Cognito is set up
-    """
-    return event.get('requestContext', {}).get('authorizer', {}).get('claims', {}).get('sub', 'test-user-123')
-
-
 def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Create standardized API Gateway response
-    """
+    """Create standardized API Gateway response."""
     return {
         'statusCode': status_code,
         'headers': {
