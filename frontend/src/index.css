@@ -52,20 +52,25 @@
   --transition-normal: 0.3s ease;
 }
 
-/* Lime Mode Theme */
+/* Lime Mode Theme - UPDATED: Light gray instead of white */
 [data-theme="lime"] {
-  --bg-primary: #f0f4f0;
-  --bg-secondary: #e8ece8;
-  --bg-card: #ffffff;
-  --bg-panel: #f5f5f5;
-  --bg-input: #ffffff;
+  --bg-primary: #d4d4d4;
+  --bg-secondary: #c8c8c8;
+  --bg-card: #e0e0e0;
+  --bg-panel: #d8d8d8;
+  --bg-input: #e8e8e8;
   
   --text-primary: #1a1a2e;
   --text-secondary: #333333;
-  --text-muted: #666666;
+  --text-muted: #555555;
   
-  --border-color: #00ff4166;
-  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --accent-primary: #00aa2a;
+  --accent-secondary: #008822;
+  --accent-glow: rgba(0, 170, 42, 0.25);
+  
+  --border-color: rgba(0, 170, 42, 0.4);
+  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.15);
+  --shadow-glow: 0 0 20px rgba(0, 170, 42, 0.25);
 }
 
 /* Global Reset & Base Styles */
@@ -267,6 +272,14 @@ a:hover {
   color: var(--bg-primary);
 }
 
+/* Button with icon helper */
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 /* Form Inputs */
 .input-group {
   margin-bottom: 20px;
@@ -317,6 +330,7 @@ a:hover {
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   padding: 4px 12px;
   font-family: var(--font-mono);
   font-size: 0.75rem;

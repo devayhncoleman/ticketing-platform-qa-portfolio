@@ -2,7 +2,7 @@ import { useState, useEffect, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
   Terminal, LogOut, Plus, RefreshCw, Sun, Moon,
-  Ticket, Clock, AlertCircle, CheckCircle, User, Filter
+  Ticket, Clock, AlertCircle, CheckCircle, User, Filter, Search, X
 } from 'lucide-react'
 import { AuthContext, API_CONFIG } from '../App'
 import axios from 'axios'
@@ -50,6 +50,7 @@ function Dashboard() {
   const [error, setError] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const navigate = useNavigate()
 
   const fetchTickets = async () => {
@@ -70,6 +71,17 @@ function Dashboard() {
   useEffect(() => { fetchTickets() }, [statusFilter])
 
   const handleLogout = () => { logout(); navigate('/login') }
+
+  // Filter tickets by search query
+  const filteredTickets = tickets.filter(ticket => {
+    if (!searchQuery) return true
+    const query = searchQuery.toLowerCase()
+    return (
+      ticket.title.toLowerCase().includes(query) ||
+      ticket.description.toLowerCase().includes(query) ||
+      ticket.category.toLowerCase().includes(query)
+    )
+  })
 
   const getStatusIcon = (status) => {
     switch (status) {
@@ -120,7 +132,7 @@ function Dashboard() {
         <header className="header">
           <div className="header-left">
             <h1><Terminal size={24} style={{ marginRight: 12 }} />tickets.list()</h1>
-            <span className="record-count">{tickets.length} records</span>
+            <span className="record-count">{filteredTickets.length} records{searchQuery && ` (filtered)`}</span>
           </div>
           <div className="header-actions">
             <button className="btn-icon" onClick={toggleTheme} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
@@ -129,7 +141,7 @@ function Dashboard() {
             <button className="btn-icon" onClick={fetchTickets} title="Refresh">
               <RefreshCw size={18} className={loading ? 'spin' : ''} />
             </button>
-            <button className="btn btn-primary btn-with-icon" onClick={() => setShowCreateModal(true)}>
+            <button className="btn btn-primary" onClick={() => setShowCreateModal(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
               <Plus size={18} />
               <span>NEW TICKET</span>
             </button>
@@ -137,6 +149,21 @@ function Dashboard() {
         </header>
 
         <div className="filters">
+          <div className="search-wrapper">
+            <Search size={18} className="search-icon" />
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search tickets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="search-clear" onClick={() => setSearchQuery('')}>
+                <X size={16} />
+              </button>
+            )}
+          </div>
           <div className="filter-group">
             <Filter size={16} />
             <select className="input-field select-field filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -154,19 +181,21 @@ function Dashboard() {
           {error && <div className="error-banner"><AlertCircle size={18} />{error}</div>}
           {loading ? (
             <div className="loading-state"><div className="spinner" style={{ width: 40, height: 40 }}></div><p>Loading tickets...</p></div>
-          ) : tickets.length === 0 ? (
+          ) : filteredTickets.length === 0 ? (
             <div className="empty-state">
               <WinningTeamLogo size={80} />
-              <h3>No tickets found</h3>
-              <p className="text-muted">Create your first ticket to get started</p>
-              <button className="btn btn-primary btn-with-icon" onClick={() => setShowCreateModal(true)}>
-                <Plus size={18} />
-                <span>CREATE TICKET</span>
-              </button>
+              <h3>{searchQuery ? 'No matching tickets' : 'No tickets found'}</h3>
+              <p className="text-muted">{searchQuery ? 'Try a different search term' : 'Create your first ticket to get started'}</p>
+              {!searchQuery && (
+                <button className="btn btn-primary" onClick={() => setShowCreateModal(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '24px' }}>
+                  <Plus size={18} />
+                  <span>CREATE TICKET</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="tickets-grid">
-              {tickets.map(ticket => (
+              {filteredTickets.map(ticket => (
                 <div 
                   key={ticket.ticketId} 
                   className="ticket-card schema-card fade-in"
@@ -229,7 +258,14 @@ function Dashboard() {
         .btn-icon:hover { color: var(--accent-primary); border-color: var(--accent-primary); }
         .btn-with-icon { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
         .spin { animation: spin 1s linear infinite; }
-        .filters { padding: 16px 32px; border-bottom: 1px solid var(--border-color); display: flex; gap: 16px; }
+        .filters { padding: 16px 32px; border-bottom: 1px solid var(--border-color); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+        .search-wrapper { position: relative; flex: 1; min-width: 200px; max-width: 400px; }
+        .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+        .search-input { width: 100%; padding: 10px 40px 10px 44px; font-family: var(--font-mono); font-size: 0.9rem; color: var(--text-primary); background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; }
+        .search-input:focus { outline: none; border-color: var(--accent-primary); }
+        .search-input::placeholder { color: var(--text-muted); }
+        .search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; display: flex; }
+        .search-clear:hover { color: var(--accent-primary); }
         .filter-group { display: flex; align-items: center; gap: 8px; color: var(--text-muted); }
         .filter-select { width: auto; padding: 8px 36px 8px 12px; font-size: 0.85rem; }
         .content { flex: 1; padding: 32px; overflow-y: auto; }
@@ -245,6 +281,21 @@ function Dashboard() {
         .ticket-description { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .ticket-meta .schema-field { padding: 6px 0; }
         .ticket-meta .badge { display: inline-flex; align-items: center; gap: 4px; }
+        
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+          .sidebar { display: none; }
+          .main-content { margin-left: 0; }
+          .header { padding: 16px; flex-wrap: wrap; gap: 12px; }
+          .header-left { flex: 1 1 100%; }
+          .header-left h1 { font-size: 1rem; }
+          .header-actions { width: 100%; justify-content: space-between; }
+          .filters { padding: 12px 16px; flex-direction: column; align-items: stretch; }
+          .search-wrapper { max-width: none; }
+          .content { padding: 16px; }
+          .tickets-grid { grid-template-columns: 1fr; gap: 16px; }
+          .record-count { display: none; }
+        }
       `}</style>
     </div>
   )
