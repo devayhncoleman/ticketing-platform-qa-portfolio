@@ -2,7 +2,8 @@ import { useState, useEffect, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
   Terminal, LogOut, Plus, RefreshCw, Sun, Moon,
-  Ticket, Clock, AlertCircle, CheckCircle, User, Filter, Search, X
+  Ticket, Clock, AlertCircle, CheckCircle, User, Filter, Search, X,
+  Shield, Wrench
 } from 'lucide-react'
 import { AuthContext, API_CONFIG } from '../App'
 import axios from 'axios'
@@ -44,7 +45,7 @@ const WinningTeamLogo = ({ size = 24 }) => (
 )
 
 function Dashboard() {
-  const { user, token, logout, theme, toggleTheme } = useContext(AuthContext)
+  const { user, token, logout, theme, toggleTheme, userRole } = useContext(AuthContext)
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -71,6 +72,11 @@ function Dashboard() {
   useEffect(() => { fetchTickets() }, [statusFilter])
 
   const handleLogout = () => { logout(); navigate('/login') }
+
+  // Handle sidebar navigation - FIXED: Now actually filters tickets
+  const handleNavClick = (filter) => {
+    setStatusFilter(filter)
+  }
 
   // Filter tickets by search query
   const filteredTickets = tickets.filter(ticket => {
@@ -104,6 +110,17 @@ function Dashboard() {
 
   const formatDate = (dateString) => new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+  // Get user display name - FIXED: Now uses correct property names
+  const getUserDisplayName = () => {
+    if (user?.firstName && user?.firstName !== 'User') {
+      return `${user.firstName} ${user.lastName || ''}`.trim()
+    }
+    if (user?.email) {
+      return user.email.split('@')[0]
+    }
+    return 'User'
+  }
+
   return (
     <div className="dashboard">
       <aside className="sidebar">
@@ -111,16 +128,58 @@ function Dashboard() {
           <div className="logo"><WinningTeamLogo size={28} /><span>THE_WINNING_TEAM</span></div>
         </div>
         <nav className="sidebar-nav">
-          <a href="#" className="nav-item active"><Ticket size={18} /><span>All Tickets</span></a>
-          <a href="#" className="nav-item"><AlertCircle size={18} /><span>Open</span></a>
-          <a href="#" className="nav-item"><Clock size={18} /><span>In Progress</span></a>
-          <a href="#" className="nav-item"><CheckCircle size={18} /><span>Resolved</span></a>
+          {/* FIXED: Sidebar items now have onClick handlers that work */}
+          <button 
+            className={`nav-item ${statusFilter === '' ? 'active' : ''}`}
+            onClick={() => handleNavClick('')}
+          >
+            <Ticket size={18} /><span>All Tickets</span>
+          </button>
+          <button 
+            className={`nav-item ${statusFilter === 'OPEN' ? 'active' : ''}`}
+            onClick={() => handleNavClick('OPEN')}
+          >
+            <AlertCircle size={18} /><span>Open</span>
+          </button>
+          <button 
+            className={`nav-item ${statusFilter === 'IN_PROGRESS' ? 'active' : ''}`}
+            onClick={() => handleNavClick('IN_PROGRESS')}
+          >
+            <Clock size={18} /><span>In Progress</span>
+          </button>
+          <button 
+            className={`nav-item ${statusFilter === 'RESOLVED' ? 'active' : ''}`}
+            onClick={() => handleNavClick('RESOLVED')}
+          >
+            <CheckCircle size={18} /><span>Resolved</span>
+          </button>
+          
+          {/* ADDED: Role-based navigation to Admin/Tech portals */}
+          {userRole === 'ADMIN' && (
+            <button 
+              className="nav-item nav-item-special"
+              onClick={() => navigate('/admin')}
+              style={{ marginTop: '24px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}
+            >
+              <Shield size={18} /><span>Admin Console</span>
+            </button>
+          )}
+          {(userRole === 'TECH' || userRole === 'ADMIN') && (
+            <button 
+              className="nav-item nav-item-special"
+              onClick={() => navigate('/tech')}
+              style={{ marginTop: userRole === 'ADMIN' ? '0' : '24px', borderTop: userRole === 'ADMIN' ? 'none' : '1px solid var(--border-color)', paddingTop: userRole === 'ADMIN' ? '0' : '16px' }}
+            >
+              <Wrench size={18} /><span>Tech Dashboard</span>
+            </button>
+          )}
         </nav>
         <div className="sidebar-footer">
           <div className="user-info" onClick={() => navigate('/profile')} style={{ cursor: 'pointer' }}>
             <div className="user-avatar"><User size={18} /></div>
             <div className="user-details">
-              <span className="user-name">{user?.givenName || 'User'}</span>
+              {/* FIXED: Now shows correct name */}
+              <span className="user-name">{getUserDisplayName()}</span>
               <span className="user-email">{user?.email}</span>
             </div>
           </div>
@@ -131,19 +190,18 @@ function Dashboard() {
       <main className="main-content">
         <header className="header">
           <div className="header-left">
-            <h1><Terminal size={24} style={{ marginRight: 12 }} />tickets.list()</h1>
-            <span className="record-count">{filteredTickets.length} records{searchQuery && ` (filtered)`}</span>
+            <h1><Terminal size={20} className="icon" />&gt;_ dashboard.tickets()</h1>
+            <span className="record-count">{filteredTickets.length} records</span>
           </div>
           <div className="header-actions">
-            <button className="btn-icon" onClick={toggleTheme} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+            <button className="btn-icon" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'lime' : 'dark'} theme`}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button className="btn-icon" onClick={fetchTickets} title="Refresh">
+            <button className="btn-icon" onClick={fetchTickets} title="Refresh" disabled={loading}>
               <RefreshCw size={18} className={loading ? 'spin' : ''} />
             </button>
-            <button className="btn btn-primary" onClick={() => setShowCreateModal(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-              <Plus size={18} />
-              <span>NEW TICKET</span>
+            <button className="btn btn-primary btn-with-icon" onClick={() => setShowCreateModal(true)}>
+              <Plus size={18} /><span>New Ticket</span>
             </button>
           </div>
         </header>
@@ -151,22 +209,12 @@ function Dashboard() {
         <div className="filters">
           <div className="search-wrapper">
             <Search size={18} className="search-icon" />
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search tickets..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button className="search-clear" onClick={() => setSearchQuery('')}>
-                <X size={16} />
-              </button>
-            )}
+            <input type="text" placeholder="Search tickets..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
+            {searchQuery && <button className="search-clear" onClick={() => setSearchQuery('')}><X size={16} /></button>}
           </div>
           <div className="filter-group">
             <Filter size={16} />
-            <select className="input-field select-field filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-field select-field filter-select">
               <option value="">All Status</option>
               <option value="OPEN">Open</option>
               <option value="IN_PROGRESS">In Progress</option>
@@ -178,50 +226,32 @@ function Dashboard() {
         </div>
 
         <div className="content">
-          {error && <div className="error-banner"><AlertCircle size={18} />{error}</div>}
+          {error && <div className="error-banner"><AlertCircle size={20} /><span>{error}</span></div>}
+          
           {loading ? (
-            <div className="loading-state"><div className="spinner" style={{ width: 40, height: 40 }}></div><p>Loading tickets...</p></div>
+            <div className="loading-state"><div className="spinner"></div><p>Loading tickets...</p></div>
           ) : filteredTickets.length === 0 ? (
             <div className="empty-state">
-              <WinningTeamLogo size={80} />
-              <h3>{searchQuery ? 'No matching tickets' : 'No tickets found'}</h3>
-              <p className="text-muted">{searchQuery ? 'Try a different search term' : 'Create your first ticket to get started'}</p>
-              {!searchQuery && (
-                <button className="btn btn-primary" onClick={() => setShowCreateModal(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '24px' }}>
-                  <Plus size={18} />
-                  <span>CREATE TICKET</span>
-                </button>
-              )}
+              <Ticket size={64} />
+              <h3>No tickets found</h3>
+              <p>Create your first ticket to get started</p>
+              <button className="btn btn-primary btn-with-icon" onClick={() => setShowCreateModal(true)}><Plus size={18} /><span>Create Ticket</span></button>
             </div>
           ) : (
             <div className="tickets-grid">
               {filteredTickets.map(ticket => (
-                <div 
-                  key={ticket.ticketId} 
-                  className="ticket-card schema-card fade-in"
-                  onClick={() => navigate(`/tickets/${ticket.ticketId}`)}
-                >
+                <div key={ticket.ticketId} className="schema-card ticket-card" onClick={() => navigate(`/tickets/${ticket.ticketId}`)}>
                   <div className="schema-card-header">
-                    <Ticket size={16} className="icon" />
-                    <span className="title">ticket.{ticket.ticketId.slice(0, 8)}</span>
+                    <span className="title">{ticket.ticketId.substring(0, 8)}...</span>
                     <span className={`badge ${getPriorityClass(ticket.priority)}`}>{ticket.priority}</span>
                   </div>
                   <div className="schema-card-body">
-                    <h4 className="ticket-title">{ticket.title}</h4>
+                    <h3 className="ticket-title">{ticket.title}</h3>
                     <p className="ticket-description">{ticket.description}</p>
                     <div className="ticket-meta">
-                      <div className="schema-field">
-                        <span className="schema-field-name">status</span>
-                        <span className={`badge ${getStatusClass(ticket.status)}`}>{getStatusIcon(ticket.status)}{ticket.status.replace('_', ' ')}</span>
-                      </div>
-                      <div className="schema-field">
-                        <span className="schema-field-name">created</span>
-                        <span className="schema-field-type">{formatDate(ticket.createdAt)}</span>
-                      </div>
-                      <div className="schema-field">
-                        <span className="schema-field-name">category</span>
-                        <span className="schema-field-type">{ticket.category}</span>
-                      </div>
+                      <div className="schema-field"><span className="field-name">status</span><span className={`badge ${getStatusClass(ticket.status)}`}>{getStatusIcon(ticket.status)}{ticket.status.replace('_', ' ')}</span></div>
+                      <div className="schema-field"><span className="field-name">category</span><span className="field-value">{ticket.category}</span></div>
+                      <div className="schema-field"><span className="field-name">created</span><span className="field-value">{formatDate(ticket.createdAt)}</span></div>
                     </div>
                   </div>
                 </div>
@@ -231,20 +261,22 @@ function Dashboard() {
         </div>
       </main>
 
-      {showCreateModal && <CreateTicketModal onClose={() => setShowCreateModal(false)} onCreated={() => { setShowCreateModal(false); fetchTickets() }} token={token} />}
+      {showCreateModal && <CreateTicketModal onClose={() => setShowCreateModal(false)} onCreated={() => { setShowCreateModal(false); fetchTickets(); }} token={token} />}
 
       <style>{`
-        .dashboard { display: flex; min-height: 100vh; }
-        .sidebar { width: 280px; background: var(--bg-secondary); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; }
+        .dashboard { display: flex; min-height: 100vh; background: var(--bg-primary); }
+        .sidebar { width: 280px; background: var(--bg-secondary); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; }
         .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border-color); }
-        .logo { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 0.9rem; font-weight: 700; color: var(--accent-primary); }
-        .sidebar-nav { flex: 1; padding: 16px 12px; }
-        .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: var(--text-secondary); border-radius: 8px; margin-bottom: 4px; font-family: var(--font-mono); font-size: 0.9rem; }
-        .nav-item:hover, .nav-item.active { background: var(--bg-panel); color: var(--accent-primary); }
+        .logo { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 0.9rem; color: var(--accent-primary); font-weight: 600; }
+        .sidebar-nav { flex: 1; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 8px; color: var(--text-secondary); font-size: 0.9rem; background: transparent; border: none; cursor: pointer; width: 100%; text-align: left; font-family: inherit; transition: all 0.2s; }
+        .nav-item:hover { background: var(--bg-panel); color: var(--text-primary); }
+        .nav-item.active { background: rgba(var(--accent-primary-rgb), 0.15); color: var(--accent-primary); border: 1px solid rgba(var(--accent-primary-rgb), 0.3); }
+        .nav-item-special { color: var(--accent-primary); }
+        .nav-item-special:hover { background: rgba(var(--accent-primary-rgb), 0.1); }
         .sidebar-footer { padding: 16px; border-top: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
-        .user-info { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px; border-radius: 8px; transition: background 0.2s; }
-        .user-info:hover { background: var(--bg-panel); }
-        .user-avatar { width: 36px; height: 36px; flex-shrink: 0; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--accent-primary); }
+        .user-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+        .user-avatar { width: 36px; height: 36px; border-radius: 8px; background: var(--bg-panel); display: flex; align-items: center; justify-content: center; color: var(--accent-primary); border: 1px solid var(--border-color); flex-shrink: 0; }
         .user-details { display: flex; flex-direction: column; min-width: 0; }
         .user-name { font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-primary); }
         .user-email { font-size: 0.7rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

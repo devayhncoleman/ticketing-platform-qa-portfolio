@@ -1,7 +1,6 @@
 """
 Lambda handler for creating tickets
-FIXED: VERSION - handles 400 requirements properly
-Updated: Uses Cognito JWT for real user authentication
+ENHANCED: Also syncs user to users table on first ticket creation
 """
 import json
 import uuid
@@ -11,30 +10,25 @@ from typing import Dict, Any
 import boto3
 from botocore.exceptions import ClientError
 
-# Import auth utilities
-from auth import extract_user_from_event, UserContext
+from auth import extract_user_from_event
 
-# Initialize DynamoDB (connection reuse across Lambda invocations)
+# Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-table_name = os.environ.get('TICKETS_TABLE_NAME', 'dev-tickets')
-table = dynamodb.Table(table_name)
+tickets_table = dynamodb.Table(os.environ.get('TICKETS_TABLE', 'dev-tickets'))
+users_table = dynamodb.Table(os.environ.get('USERS_TABLE', 'dev-users'))
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for POST /tickets
     Creates a new support ticket in DynamoDB
-    
-    Args:
-        event: API Gateway event with ticket data in body
-        context: Lambda context
-        
-    Returns:
-        API Gateway response with created ticket
+    Also ensures user exists in users table (sync from Cognito)
     """
     try:
-        # Extract authenticated user from Cognito JWT
         user = extract_user_from_event(event)
+        
+        # Sync user to users table if not exists
+        sync_user_to_table(user)
         
         # Parse request body
         body = json.loads(event.get('body', '{}'))
@@ -68,32 +62,60 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'status': 'OPEN',
             'priority': priority,
             'category': body.get('category', 'General'),
-            'createdBy': user.user_id,  # Cognito user sub
-            'createdByEmail': user.email,  # User's email for display
+            'createdBy': user.user_id,
+            'createdByEmail': user.email,
+            'createdByName': f"{getattr(user, 'given_name', '')} {getattr(user, 'family_name', '')}".strip() or user.email,
             'createdAt': now,
             'updatedAt': now,
             'updatedBy': user.user_id,
-            'assignedTo': body.get('assignedTo', 'UNASSIGNED'),
+            'assignedTo': None,  # Unassigned by default
+            'assignedToName': None,
             'tags': body.get('tags', [])
         }
         
         # Save to DynamoDB
-        table.put_item(Item=ticket)
+        tickets_table.put_item(Item=ticket)
         
-        print(f"Created ticket {ticket_id} by user {user.email} in table {table_name}")
+        print(f"Created ticket {ticket_id} by user {user.email}")
         return create_response(201, ticket)
         
     except json.JSONDecodeError:
         return create_response(400, {'error': 'Invalid JSON in request body'})
-        
     except ClientError as e:
         error_code = e.response['Error']['Code']
         print(f"DynamoDB error: {error_code} - {e}")
         return create_response(500, {'error': 'Failed to create ticket'})
-        
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         return create_response(500, {'error': 'Internal server error'})
+
+
+def sync_user_to_table(user) -> None:
+    """
+    Ensures user exists in users table.
+    Creates with CUSTOMER role if not exists.
+    This syncs Cognito users to our app database.
+    """
+    try:
+        # Check if user exists
+        response = users_table.get_item(Key={'userId': user.user_id})
+        
+        if 'Item' not in response:
+            # Create new user record with CUSTOMER role
+            now = datetime.now(timezone.utc).isoformat()
+            users_table.put_item(Item={
+                'userId': user.user_id,
+                'email': user.email,
+                'firstName': getattr(user, 'given_name', ''),
+                'lastName': getattr(user, 'family_name', ''),
+                'role': 'CUSTOMER',  # Default role
+                'createdAt': now,
+                'updatedAt': now
+            })
+            print(f"Synced new user {user.email} to users table")
+    except Exception as e:
+        print(f"Warning: Could not sync user to table: {e}")
+        # Don't fail ticket creation if user sync fails
 
 
 def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:

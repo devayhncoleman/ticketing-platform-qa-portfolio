@@ -52,25 +52,25 @@
   --transition-normal: 0.3s ease;
 }
 
-/* Lime Mode Theme - UPDATED: Light gray instead of white */
+/* Lime Mode Theme - LIGHTER GRAY with sidebar/header contrast */
 [data-theme="lime"] {
-  --bg-primary: #d4d4d4;
-  --bg-secondary: #c8c8c8;
-  --bg-card: #e0e0e0;
-  --bg-panel: #d8d8d8;
-  --bg-input: #e8e8e8;
+  --bg-primary: #6a6a6a;
+  --bg-secondary: #5a5a5a;
+  --bg-card: #7a7a7a;
+  --bg-panel: #606060;
+  --bg-input: #757575;
   
-  --text-primary: #1a1a2e;
-  --text-secondary: #333333;
-  --text-muted: #555555;
+  --text-primary: #f5f5f5;
+  --text-secondary: #e0e0e0;
+  --text-muted: #b0b0b0;
   
-  --accent-primary: #00aa2a;
-  --accent-secondary: #008822;
-  --accent-glow: rgba(0, 170, 42, 0.25);
+  --accent-primary: #00ff41;
+  --accent-secondary: #00dd38;
+  --accent-glow: rgba(0, 255, 65, 0.3);
   
-  --border-color: rgba(0, 170, 42, 0.4);
-  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.15);
-  --shadow-glow: 0 0 20px rgba(0, 170, 42, 0.25);
+  --border-color: rgba(0, 255, 65, 0.35);
+  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.3);
+  --shadow-glow: 0 0 20px rgba(0, 255, 65, 0.25);
 }
 
 /* Global Reset & Base Styles */
@@ -237,6 +237,17 @@ a:hover {
   background: transparent;
   color: var(--accent-primary);
   box-shadow: var(--shadow-glow);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary:disabled:hover {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  box-shadow: none;
 }
 
 .btn-secondary {

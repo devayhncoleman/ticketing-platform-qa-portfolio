@@ -1,631 +1,814 @@
-import { useState, useEffect, useContext } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect, useContext, useRef } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { 
-  Terminal, ArrowLeft, Ticket, Clock, AlertCircle, CheckCircle, 
-  User, Calendar, Tag, Edit3, Save, X, Trash2, MessageSquare
+  ArrowLeft, Tag, Clock, User, AlertCircle, CheckCircle, 
+  MessageSquare, Send, Paperclip, Image, X, Loader,
+  Shield, Calendar, Hash
 } from 'lucide-react'
 import { AuthContext, API_CONFIG } from '../App'
 import axios from 'axios'
 
-// The Winning Team Logo
-const WinningTeamLogo = ({ size = 24 }) => (
-  <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-    <circle cx="60" cy="60" r="52" fill="#1a1a2e" stroke="currentColor" strokeWidth="2"/>
-    <circle cx="60" cy="60" r="42" fill="#0d0d1a" stroke="currentColor" strokeWidth="1" strokeOpacity="0.4"/>
-    <circle cx="60" cy="60" r="32" fill="#1a1a2e" stroke="currentColor" strokeWidth="1" strokeOpacity="0.4"/>
-    <circle cx="60" cy="60" r="6" fill="currentColor" opacity="0.5"/>
-    <g transform="translate(60, 62) rotate(12)">
-      <path d="M-14,-22 L-11,-6 Q-11,7 0,11 Q11,7 11,-6 L14,-22 Z" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-      <polygon points="0,-14 1.5,-9 7,-9 2.5,-5 4,1 0,-2 -4,1 -2.5,-5 -7,-9 -1.5,-9" fill="currentColor" opacity="0.9"/>
-    </g>
-    <g transform="translate(60, 60)">
-      <line x1="0" y1="0" x2="32" y2="32" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
-      <g transform="translate(32, 32) rotate(45)">
-        <path d="M0,0 L0,-18 L6,-12 L0,-6 L-6,-12 Z" fill="currentColor" opacity="0.9"/>
-      </g>
-    </g>
-  </svg>
-)
+// Status badge component
+const StatusBadge = ({ status }) => {
+  const config = {
+    'OPEN': { color: '#00ff41', bg: 'rgba(0, 255, 65, 0.15)', icon: AlertCircle },
+    'IN_PROGRESS': { color: '#4ecdc4', bg: 'rgba(78, 205, 196, 0.15)', icon: Clock },
+    'WAITING': { color: '#ffe66d', bg: 'rgba(255, 230, 109, 0.15)', icon: Clock },
+    'RESOLVED': { color: '#39ff14', bg: 'rgba(57, 255, 20, 0.15)', icon: CheckCircle },
+    'CLOSED': { color: '#6c757d', bg: 'rgba(108, 117, 125, 0.15)', icon: CheckCircle }
+  }
+  const { color, bg, icon: Icon } = config[status] || config['OPEN']
+  
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '6px',
+      padding: '4px 12px', borderRadius: '4px',
+      background: bg, border: `1px solid ${color}`, color,
+      fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600,
+      textTransform: 'uppercase'
+    }}>
+      <Icon size={12} />
+      {status.replace('_', ' ')}
+    </span>
+  )
+}
+
+// Priority badge component
+const PriorityBadge = ({ priority }) => {
+  const colors = {
+    'LOW': '#6c757d',
+    'MEDIUM': '#4ecdc4',
+    'HIGH': '#ffe66d',
+    'CRITICAL': '#ff6b6b'
+  }
+  const color = colors[priority] || colors['MEDIUM']
+  
+  return (
+    <span style={{
+      padding: '4px 12px', borderRadius: '4px',
+      border: `1px solid ${color}`, color,
+      fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600,
+      textTransform: 'uppercase'
+    }}>
+      {priority}
+    </span>
+  )
+}
+
+// Comment component
+const Comment = ({ comment, isOwnComment }) => {
+  const isInternal = comment.isInternal
+  const roleColors = {
+    'CUSTOMER': '#4ecdc4',
+    'TECH': '#ffe66d',
+    'ADMIN': '#ff6b6b'
+  }
+  const roleColor = roleColors[comment.authorRole] || '#4ecdc4'
+  
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: isOwnComment ? 'flex-end' : 'flex-start',
+      marginBottom: '16px'
+    }}>
+      <div style={{
+        maxWidth: '80%',
+        background: isInternal ? 'rgba(255, 107, 107, 0.1)' : (isOwnComment ? 'rgba(0, 255, 65, 0.1)' : 'var(--bg-panel)'),
+        border: `1px solid ${isInternal ? 'rgba(255, 107, 107, 0.3)' : 'var(--border-color)'}`,
+        borderRadius: '12px',
+        borderTopLeftRadius: isOwnComment ? '12px' : '4px',
+        borderTopRightRadius: isOwnComment ? '4px' : '12px',
+        padding: '12px 16px'
+      }}>
+        {/* Author header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <span style={{ 
+            fontFamily: 'var(--font-mono)', 
+            fontSize: '0.8rem', 
+            fontWeight: 600,
+            color: roleColor 
+          }}>
+            {comment.authorName || comment.authorEmail}
+          </span>
+          <span style={{
+            fontSize: '0.65rem',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            background: `${roleColor}22`,
+            color: roleColor,
+            fontFamily: 'var(--font-mono)',
+            textTransform: 'uppercase'
+          }}>
+            {comment.authorRole}
+          </span>
+          {isInternal && (
+            <span style={{
+              fontSize: '0.65rem',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: 'rgba(255, 107, 107, 0.2)',
+              color: '#ff6b6b',
+              fontFamily: 'var(--font-mono)'
+            }}>
+              INTERNAL
+            </span>
+          )}
+        </div>
+        
+        {/* Content */}
+        <p style={{ 
+          color: 'var(--text-primary)', 
+          fontSize: '0.9rem', 
+          lineHeight: 1.5,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word'
+        }}>
+          {comment.content}
+        </p>
+        
+        {/* Attachments */}
+        {comment.attachments && comment.attachments.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+            {comment.attachments.map((url, idx) => (
+              <a 
+                key={idx} 
+                href={url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{
+                  display: 'block',
+                  width: '100px',
+                  height: '100px',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  border: '1px solid var(--border-color)'
+                }}
+              >
+                <img 
+                  src={url} 
+                  alt={`Attachment ${idx + 1}`}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              </a>
+            ))}
+          </div>
+        )}
+        
+        {/* Timestamp */}
+        <div style={{ 
+          marginTop: '8px', 
+          fontSize: '0.7rem', 
+          color: 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)'
+        }}>
+          {new Date(comment.createdAt).toLocaleString()}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function TicketDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user, token, logout } = useContext(AuthContext)
+  const { user, token } = useContext(AuthContext)
+  const messagesEndRef = useRef(null)
   
+  // Ticket state
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [isEditing, setIsEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   
-  const [editForm, setEditForm] = useState({
-    title: '',
-    description: '',
-    status: '',
-    priority: '',
-    category: ''
-  })
+  // Comments state
+  const [comments, setComments] = useState([])
+  const [loadingComments, setLoadingComments] = useState(true)
+  
+  // New comment state
+  const [newComment, setNewComment] = useState('')
+  const [isInternal, setIsInternal] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [attachments, setAttachments] = useState([])
+  const [uploading, setUploading] = useState(false)
+  
+  // User role (from token or API)
+  const [userRole, setUserRole] = useState('CUSTOMER')
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   useEffect(() => {
     fetchTicket()
+    fetchComments()
+    // Get user role from stored user data
+    const storedUser = JSON.parse(localStorage.getItem('user') || '{}')
+    setUserRole(storedUser.role || 'CUSTOMER')
   }, [id])
 
+  useEffect(() => {
+    scrollToBottom()
+  }, [comments])
+
   const fetchTicket = async () => {
-    setLoading(true)
-    setError('')
     try {
       const response = await axios.get(`${API_CONFIG.baseUrl}/tickets/${id}`, {
-        headers: { Authorization: token }
+        headers: { Authorization: `Bearer ${token}` }
       })
       setTicket(response.data)
-      setEditForm({
-        title: response.data.title,
-        description: response.data.description,
-        status: response.data.status,
-        priority: response.data.priority,
-        category: response.data.category
-      })
     } catch (err) {
-      if (err.response?.status === 401) {
-        logout()
-        navigate('/login')
-      } else if (err.response?.status === 404) {
-        setError('Ticket not found')
-      } else {
-        setError('Failed to load ticket')
-      }
+      setError('Failed to load ticket')
+      console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSave = async () => {
-    setSaving(true)
-    setError('')
+  const fetchComments = async () => {
     try {
-      const response = await axios.patch(
-        `${API_CONFIG.baseUrl}/tickets/${id}`,
-        editForm,
-        { headers: { Authorization: token, 'Content-Type': 'application/json' } }
-      )
-      setTicket(response.data)
-      setIsEditing(false)
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update ticket')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    setDeleting(true)
-    try {
-      await axios.delete(`${API_CONFIG.baseUrl}/tickets/${id}`, {
-        headers: { Authorization: token }
+      const response = await axios.get(`${API_CONFIG.baseUrl}/tickets/${id}/comments`, {
+        headers: { Authorization: `Bearer ${token}` }
       })
-      navigate('/dashboard')
+      setComments(response.data.comments || [])
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to delete ticket')
-      setDeleting(false)
-      setShowDeleteConfirm(false)
+      console.error('Failed to load comments:', err)
+    } finally {
+      setLoadingComments(false)
     }
   }
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'OPEN': return <AlertCircle size={16} />
-      case 'IN_PROGRESS': return <Clock size={16} />
-      case 'RESOLVED': case 'CLOSED': return <CheckCircle size={16} />
-      default: return <Ticket size={16} />
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files)
+    if (files.length === 0) return
+    
+    // Validate file types (images only)
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+    const invalidFiles = files.filter(f => !validTypes.includes(f.type))
+    if (invalidFiles.length > 0) {
+      alert('Only image files are allowed (JPEG, PNG, GIF, WebP)')
+      return
+    }
+    
+    // Max 5 attachments
+    if (attachments.length + files.length > 5) {
+      alert('Maximum 5 attachments per comment')
+      return
+    }
+    
+    setUploading(true)
+    
+    try {
+      for (const file of files) {
+        // Get presigned URL
+        const urlResponse = await axios.post(
+          `${API_CONFIG.baseUrl}/attachments/upload-url`,
+          {
+            fileName: file.name,
+            contentType: file.type,
+            ticketId: id
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        
+        const { uploadUrl, fileUrl } = urlResponse.data
+        
+        // Upload to S3
+        await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type }
+        })
+        
+        setAttachments(prev => [...prev, { url: fileUrl, name: file.name }])
+      }
+    } catch (err) {
+      console.error('Upload failed:', err)
+      alert('Failed to upload attachment')
+    } finally {
+      setUploading(false)
     }
   }
 
-  const getStatusClass = (status) => {
-    const classes = { OPEN: 'badge-open', IN_PROGRESS: 'badge-in-progress', WAITING: 'badge-waiting', RESOLVED: 'badge-resolved', CLOSED: 'badge-closed' }
-    return classes[status] || ''
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index))
   }
 
-  const getPriorityClass = (priority) => {
-    const classes = { LOW: 'badge-low', MEDIUM: 'badge-medium', HIGH: 'badge-high', CRITICAL: 'badge-critical' }
-    return classes[priority] || ''
+  const handleSendComment = async () => {
+    if (!newComment.trim() && attachments.length === 0) return
+    
+    setSending(true)
+    
+    try {
+      const response = await axios.post(
+        `${API_CONFIG.baseUrl}/tickets/${id}/comments`,
+        {
+          content: newComment.trim(),
+          attachments: attachments.map(a => a.url),
+          isInternal
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      
+      setComments(prev => [...prev, response.data])
+      setNewComment('')
+      setAttachments([])
+      setIsInternal(false)
+    } catch (err) {
+      console.error('Failed to send comment:', err)
+      alert('Failed to send comment')
+    } finally {
+      setSending(false)
+    }
   }
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendComment()
+    }
   }
 
   if (loading) {
     return (
-      <div className="ticket-detail-page">
-        <div className="loading-container">
-          <div className="spinner" style={{ width: 48, height: 48 }}></div>
-          <p>Loading ticket...</p>
-        </div>
-        <style>{styles}</style>
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: 'var(--bg-primary)'
+      }}>
+        <div className="spinner" style={{ width: 40, height: 40 }} />
       </div>
     )
   }
 
-  if (error && !ticket) {
+  if (error || !ticket) {
     return (
-      <div className="ticket-detail-page">
-        <div className="error-container">
-          <AlertCircle size={48} />
-          <h2>{error}</h2>
-          <Link to="/dashboard" className="btn btn-primary btn-with-icon">
-            <ArrowLeft size={18} /><span>Back to Dashboard</span>
-          </Link>
-        </div>
-        <style>{styles}</style>
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: 'var(--bg-primary)',
+        color: '#ff6b6b'
+      }}>
+        {error || 'Ticket not found'}
       </div>
     )
   }
 
   return (
-    <div className="ticket-detail-page">
+    <div style={{ 
+      minHeight: '100vh', 
+      background: 'var(--bg-primary)',
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
       {/* Header */}
-      <header className="detail-header">
-        <div className="header-left">
-          <Link to="/dashboard" className="back-link">
-            <ArrowLeft size={20} />
-            <span>Back</span>
-          </Link>
-          <div className="header-title">
-            <h1>
-              <Terminal size={24} />
-              ticket.view("{id.slice(0, 8)}...")
-            </h1>
-          </div>
+      <header style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px 24px',
+        background: 'var(--bg-secondary)',
+        borderBottom: '1px solid var(--border-color)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button 
+            onClick={() => navigate('/dashboard')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'var(--bg-panel)', border: '1px solid var(--border-color)',
+              borderRadius: '6px', padding: '8px 16px', color: 'var(--text-primary)',
+              cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.85rem'
+            }}
+          >
+            <ArrowLeft size={16} />
+            Back
+          </button>
+          
+          <h1 style={{ 
+            fontFamily: 'var(--font-mono)', 
+            fontSize: '1.1rem',
+            color: 'var(--accent-primary)'
+          }}>
+            <span style={{ color: 'var(--text-muted)' }}>&gt;_ </span>
+            ticket.view("{ticket.ticketId.substring(0, 8)}...")
+          </h1>
         </div>
-        <div className="header-actions">
-          {!isEditing ? (
-            <>
-              <button className="btn btn-ghost btn-with-icon" onClick={() => setIsEditing(true)}>
-                <Edit3 size={18} /><span>Edit</span>
-              </button>
-              <button className="btn btn-danger btn-with-icon" onClick={() => setShowDeleteConfirm(true)}>
-                <Trash2 size={18} /><span>Delete</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="btn btn-ghost btn-with-icon" onClick={() => { setIsEditing(false); setEditForm({ title: ticket.title, description: ticket.description, status: ticket.status, priority: ticket.priority, category: ticket.category }) }}>
-                <X size={18} /><span>Cancel</span>
-              </button>
-              <button className="btn btn-primary btn-with-icon" onClick={handleSave} disabled={saving}>
-                {saving ? <><div className="spinner"></div><span>Saving...</span></> : <><Save size={18} /><span>Save Changes</span></>}
-              </button>
-            </>
-          )}
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <StatusBadge status={ticket.status} />
+          <PriorityBadge priority={ticket.priority} />
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="detail-content">
-        {error && <div className="error-banner"><AlertCircle size={18} />{error}</div>}
-
-        <div className="content-grid">
-          {/* Left Column - Main Info */}
-          <div className="main-column">
-            <div className="schema-card">
-              <div className="schema-card-header">
-                <Ticket size={16} className="icon" />
-                <span className="title">ticket.details</span>
-                <span className={`badge ${getPriorityClass(ticket.priority)}`}>{ticket.priority}</span>
-              </div>
-              <div className="schema-card-body">
-                {isEditing ? (
-                  <>
-                    <div className="input-group">
-                      <label className="input-label">TITLE</label>
-                      <input
-                        type="text"
-                        className="input-field"
-                        value={editForm.title}
-                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      />
-                    </div>
-                    <div className="input-group">
-                      <label className="input-label">DESCRIPTION</label>
-                      <textarea
-                        className="input-field textarea"
-                        rows={6}
-                        value={editForm.description}
-                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <h2 className="ticket-title">{ticket.title}</h2>
-                    <p className="ticket-description">{ticket.description}</p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Comments Section Placeholder */}
-            <div className="schema-card">
-              <div className="schema-card-header">
-                <MessageSquare size={16} className="icon" />
-                <span className="title">ticket.comments</span>
-              </div>
-              <div className="schema-card-body">
-                <div className="comments-placeholder">
-                  <MessageSquare size={32} />
-                  <p>Comments feature coming soon</p>
-                </div>
-              </div>
-            </div>
+      {/* Main content */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: '1fr 320px',
+        flex: 1,
+        overflow: 'hidden'
+      }}>
+        {/* Left: Ticket details and chat */}
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          borderRight: '1px solid var(--border-color)',
+          overflow: 'hidden'
+        }}>
+          {/* Ticket info */}
+          <div style={{ 
+            padding: '24px',
+            borderBottom: '1px solid var(--border-color)',
+            background: 'var(--bg-card)'
+          }}>
+            <h2 style={{ 
+              fontFamily: 'var(--font-mono)',
+              fontSize: '1.25rem',
+              color: 'var(--text-primary)',
+              marginBottom: '12px'
+            }}>
+              {ticket.title}
+            </h2>
+            <p style={{ 
+              color: 'var(--text-secondary)',
+              fontSize: '0.95rem',
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap'
+            }}>
+              {ticket.description}
+            </p>
           </div>
 
-          {/* Right Column - Metadata */}
-          <div className="sidebar-column">
-            <div className="schema-card">
-              <div className="schema-card-header">
-                <Tag size={16} className="icon" />
-                <span className="title">ticket.metadata</span>
+          {/* Comments/Chat section */}
+          <div style={{ 
+            flex: 1, 
+            overflow: 'auto',
+            padding: '24px',
+            background: 'var(--bg-primary)'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              marginBottom: '20px',
+              color: 'var(--accent-primary)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.9rem'
+            }}>
+              <MessageSquare size={18} />
+              ticket.comments
+            </div>
+
+            {loadingComments ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <div className="spinner" />
               </div>
-              <div className="schema-card-body">
-                {/* Status */}
-                <div className="meta-field">
-                  <span className="meta-label">Status</span>
-                  {isEditing ? (
-                    <select
-                      className="input-field select-field"
-                      value={editForm.status}
-                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                    >
-                      <option value="OPEN">Open</option>
-                      <option value="IN_PROGRESS">In Progress</option>
-                      <option value="WAITING">Waiting</option>
-                      <option value="RESOLVED">Resolved</option>
-                      <option value="CLOSED">Closed</option>
-                    </select>
-                  ) : (
-                    <span className={`badge ${getStatusClass(ticket.status)}`}>
-                      {getStatusIcon(ticket.status)}
-                      {ticket.status.replace('_', ' ')}
-                    </span>
-                  )}
-                </div>
-
-                {/* Priority */}
-                <div className="meta-field">
-                  <span className="meta-label">Priority</span>
-                  {isEditing ? (
-                    <select
-                      className="input-field select-field"
-                      value={editForm.priority}
-                      onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
-                    >
-                      <option value="LOW">Low</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="HIGH">High</option>
-                      <option value="CRITICAL">Critical</option>
-                    </select>
-                  ) : (
-                    <span className={`badge ${getPriorityClass(ticket.priority)}`}>{ticket.priority}</span>
-                  )}
-                </div>
-
-                {/* Category */}
-                <div className="meta-field">
-                  <span className="meta-label">Category</span>
-                  {isEditing ? (
-                    <select
-                      className="input-field select-field"
-                      value={editForm.category}
-                      onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                    >
-                      <option value="General">General</option>
-                      <option value="Bug">Bug</option>
-                      <option value="Feature">Feature Request</option>
-                      <option value="Support">Support</option>
-                    </select>
-                  ) : (
-                    <span className="meta-value">{ticket.category}</span>
-                  )}
-                </div>
-
-                <div className="meta-divider"></div>
-
-                {/* Created */}
-                <div className="meta-field">
-                  <span className="meta-label"><Calendar size={14} /> Created</span>
-                  <span className="meta-value meta-date">{formatDate(ticket.createdAt)}</span>
-                </div>
-
-                {/* Updated */}
-                <div className="meta-field">
-                  <span className="meta-label"><Clock size={14} /> Updated</span>
-                  <span className="meta-value meta-date">{formatDate(ticket.updatedAt)}</span>
-                </div>
-
-                {/* Created By */}
-                <div className="meta-field">
-                  <span className="meta-label"><User size={14} /> Created By</span>
-                  <span className="meta-value">{ticket.createdBy || 'Unknown'}</span>
-                </div>
-
-                {/* Ticket ID */}
-                <div className="meta-field">
-                  <span className="meta-label">Ticket ID</span>
-                  <code className="meta-code">{ticket.ticketId}</code>
-                </div>
+            ) : comments.length === 0 ? (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '40px',
+                color: 'var(--text-muted)'
+              }}>
+                No comments yet. Start the conversation!
               </div>
+            ) : (
+              comments.map((comment) => (
+                <Comment 
+                  key={comment.commentId} 
+                  comment={comment}
+                  isOwnComment={comment.authorId === user?.sub}
+                />
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Comment input */}
+          <div style={{
+            padding: '16px 24px',
+            background: 'var(--bg-secondary)',
+            borderTop: '1px solid var(--border-color)'
+          }}>
+            {/* Attachments preview */}
+            {attachments.length > 0 && (
+              <div style={{ 
+                display: 'flex', 
+                gap: '8px', 
+                marginBottom: '12px',
+                flexWrap: 'wrap'
+              }}>
+                {attachments.map((att, idx) => (
+                  <div key={idx} style={{
+                    position: 'relative',
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    <img 
+                      src={att.url} 
+                      alt={att.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    <button
+                      onClick={() => removeAttachment(idx)}
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        right: '2px',
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        background: '#ff6b6b',
+                        border: 'none',
+                        color: 'white',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Internal note toggle (tech/admin only) */}
+            {userRole !== 'CUSTOMER' && (
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                marginBottom: '12px'
+              }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.8rem',
+                  color: isInternal ? '#ff6b6b' : 'var(--text-muted)'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={isInternal}
+                    onChange={(e) => setIsInternal(e.target.checked)}
+                    style={{ accentColor: '#ff6b6b' }}
+                  />
+                  <Shield size={14} />
+                  Internal note (not visible to customer)
+                </label>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+              <div style={{ flex: 1, position: 'relative' }}>
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                  rows={2}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.9rem',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    color: 'var(--text-primary)',
+                    resize: 'none'
+                  }}
+                />
+              </div>
+              
+              {/* Attachment button */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '44px',
+                height: '44px',
+                background: 'var(--bg-panel)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                cursor: uploading ? 'wait' : 'pointer',
+                color: 'var(--text-muted)'
+              }}>
+                {uploading ? <Loader size={18} className="spinner" /> : <Image size={18} />}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  disabled={uploading}
+                  style={{ display: 'none' }}
+                />
+              </label>
+              
+              {/* Send button */}
+              <button
+                onClick={handleSendComment}
+                disabled={sending || (!newComment.trim() && attachments.length === 0)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '12px 24px',
+                  background: 'var(--accent-primary)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: 'var(--bg-primary)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: sending ? 'wait' : 'pointer',
+                  opacity: sending || (!newComment.trim() && attachments.length === 0) ? 0.5 : 1
+                }}
+              >
+                {sending ? <Loader size={16} className="spinner" /> : <Send size={16} />}
+                SEND
+              </button>
             </div>
           </div>
         </div>
-      </main>
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
-          <div className="modal schema-card" onClick={(e) => e.stopPropagation()}>
-            <div className="schema-card-header">
-              <Trash2 size={16} className="icon" style={{ color: 'var(--priority-critical)' }} />
-              <span className="title">ticket.delete()</span>
+        {/* Right: Metadata sidebar */}
+        <div style={{ 
+          background: 'var(--bg-secondary)',
+          padding: '24px',
+          overflow: 'auto'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '24px',
+            color: 'var(--accent-primary)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.9rem'
+          }}>
+            <Tag size={18} />
+            ticket.metadata
+          </div>
+
+          {/* Metadata fields */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                <AlertCircle size={12} />
+                Status
+              </label>
+              <StatusBadge status={ticket.status} />
             </div>
-            <div className="schema-card-body" style={{ textAlign: 'center', padding: '32px 24px' }}>
-              <AlertCircle size={48} style={{ color: 'var(--priority-critical)', marginBottom: 16 }} />
-              <h3 style={{ marginBottom: 8 }}>Delete this ticket?</h3>
-              <p className="text-muted" style={{ marginBottom: 24 }}>This action cannot be undone.</p>
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-                <button className="btn btn-danger btn-with-icon" onClick={handleDelete} disabled={deleting}>
-                  {deleting ? <><div className="spinner"></div><span>Deleting...</span></> : <><Trash2 size={18} /><span>Delete Ticket</span></>}
-                </button>
-              </div>
+
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                Priority
+              </label>
+              <PriorityBadge priority={ticket.priority} />
+            </div>
+
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                <Tag size={12} />
+                Category
+              </label>
+              <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
+                {ticket.category}
+              </span>
+            </div>
+
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                <User size={12} />
+                Assigned To
+              </label>
+              <span style={{ 
+                color: ticket.assignedTo ? 'var(--text-primary)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.9rem'
+              }}>
+                {ticket.assignedToName || ticket.assignedTo || 'Unassigned'}
+              </span>
+            </div>
+
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                <Calendar size={12} />
+                Created
+              </label>
+              <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+                {new Date(ticket.createdAt).toLocaleString()}
+              </span>
+            </div>
+
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                <Clock size={12} />
+                Last Updated
+              </label>
+              <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+                {new Date(ticket.updatedAt).toLocaleString()}
+              </span>
+            </div>
+
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                <User size={12} />
+                Created By
+              </label>
+              <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+                {ticket.createdByName || ticket.createdByEmail}
+              </span>
+            </div>
+
+            <div>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', gap: '6px',
+                fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                color: 'var(--text-muted)', marginBottom: '8px',
+                textTransform: 'uppercase'
+              }}>
+                <Hash size={12} />
+                Ticket ID
+              </label>
+              <span style={{ 
+                color: 'var(--accent-primary)', 
+                fontFamily: 'var(--font-mono)', 
+                fontSize: '0.75rem',
+                wordBreak: 'break-all'
+              }}>
+                {ticket.ticketId}
+              </span>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      <style>{styles}</style>
+      <style>{`
+        textarea:focus {
+          outline: none;
+          border-color: var(--accent-primary) !important;
+        }
+        .spinner {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+          .ticket-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }
-
-const styles = `
-  .ticket-detail-page {
-    min-height: 100vh;
-    background: var(--bg-primary);
-  }
-
-  .loading-container, .error-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    color: var(--text-muted);
-    gap: 16px;
-  }
-
-  .error-container svg {
-    color: var(--priority-critical);
-  }
-
-  .detail-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 32px;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-secondary);
-  }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-  }
-
-  .back-link {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: 0.9rem;
-    padding: 8px 16px;
-    background: var(--bg-panel);
-    border-radius: 8px;
-    transition: all 0.2s;
-  }
-
-  .back-link:hover {
-    color: var(--accent-primary);
-    background: var(--bg-card);
-  }
-
-  .header-title h1 {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-family: var(--font-mono);
-    font-size: 1.25rem;
-    color: var(--accent-primary);
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 12px;
-  }
-
-  .btn-with-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .btn-danger {
-    background: rgba(255, 107, 107, 0.1);
-    border: 1px solid var(--priority-critical);
-    color: var(--priority-critical);
-  }
-
-  .btn-danger:hover {
-    background: rgba(255, 107, 107, 0.2);
-  }
-
-  .detail-content {
-    padding: 32px;
-    max-width: 1400px;
-    margin: 0 auto;
-  }
-
-  .error-banner {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px;
-    background: rgba(255, 107, 107, 0.1);
-    border: 1px solid var(--priority-critical);
-    border-radius: 8px;
-    color: var(--priority-critical);
-    margin-bottom: 24px;
-    font-family: var(--font-mono);
-  }
-
-  .content-grid {
-    display: grid;
-    grid-template-columns: 1fr 350px;
-    gap: 24px;
-  }
-
-  @media (max-width: 1024px) {
-    .content-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .main-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-
-  .ticket-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 16px;
-  }
-
-  .ticket-description {
-    color: var(--text-secondary);
-    line-height: 1.7;
-    white-space: pre-wrap;
-  }
-
-  .textarea {
-    resize: vertical;
-    min-height: 150px;
-  }
-
-  .comments-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 48px;
-    color: var(--text-muted);
-    opacity: 0.5;
-  }
-
-  .comments-placeholder svg {
-    margin-bottom: 12px;
-  }
-
-  .sidebar-column .schema-card-body {
-    padding: 16px;
-  }
-
-  .meta-field {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .meta-field:last-child {
-    border-bottom: none;
-  }
-
-  .meta-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-  }
-
-  .meta-value {
-    font-family: var(--font-mono);
-    font-size: 0.9rem;
-    color: var(--text-primary);
-  }
-
-  .meta-date {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-  }
-
-  .meta-code {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    color: var(--accent-primary);
-    background: var(--bg-panel);
-    padding: 4px 8px;
-    border-radius: 4px;
-    word-break: break-all;
-  }
-
-  .meta-divider {
-    height: 1px;
-    background: var(--border-color);
-    margin: 8px 0;
-  }
-
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 24px;
-  }
-
-  .modal {
-    width: 100%;
-    max-width: 400px;
-  }
-
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-`
 
 export default TicketDetail

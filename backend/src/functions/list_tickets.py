@@ -68,7 +68,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Role-based filtering
         if user.is_customer:
             # Customers can only see their own tickets - use CreatedByIndex
-            scan_kwargs['IndexName'] = 'CreatedByIndex'
+            scan_kwargs['IndexName'] = 'UserIndex'
             scan_kwargs['KeyConditionExpression'] = Key('createdBy').eq(user.user_id)
             
             # Add status filter if provided
