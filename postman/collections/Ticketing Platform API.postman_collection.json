@@ -1,0 +1,63 @@
+{
+  "info": {
+    "_postman_id": "37ecf327-c23d-425f-b2d2-5b1a79e9688f",
+    "name": "Ticketing Platform API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Ticket",
+      "id": "a4cc33a4-6dfb-469d-84f8-490008d5512c",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "Get Ticket",
+      "id": "5b51768b-41e3-4228-932e-1ceb9a2b57e9",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "List All Tickets",
+      "id": "5fff17bf-690d-4fa1-9cc5-e386360e3ab9",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "List OPEN Tickets (GSI Query)",
+      "id": "b3cde6f1-fec1-445b-821d-a248086af8c8",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "Update Ticket",
+      "id": "3ff8c2b9-d5be-443d-938b-041102aa044e",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "Delete Ticket (Soft)",
+      "id": "e4e3b48b-6fe7-414b-9493-793299af2b6d",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    }
+  ]
+}
