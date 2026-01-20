@@ -105,7 +105,7 @@ function Dashboard() {
           <a href="#" className="nav-item"><CheckCircle size={18} /><span>Resolved</span></a>
         </nav>
         <div className="sidebar-footer">
-          <div className="user-info">
+          <div className="user-info" onClick={() => navigate('/profile')} style={{ cursor: 'pointer' }}>
             <div className="user-avatar"><User size={18} /></div>
             <div className="user-details">
               <span className="user-name">{user?.givenName || 'User'}</span>
@@ -213,7 +213,8 @@ function Dashboard() {
         .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: var(--text-secondary); border-radius: 8px; margin-bottom: 4px; font-family: var(--font-mono); font-size: 0.9rem; }
         .nav-item:hover, .nav-item.active { background: var(--bg-panel); color: var(--accent-primary); }
         .sidebar-footer { padding: 16px; border-top: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
-        .user-info { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .user-info { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px; border-radius: 8px; transition: background 0.2s; }
+        .user-info:hover { background: var(--bg-panel); }
         .user-avatar { width: 36px; height: 36px; flex-shrink: 0; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--accent-primary); }
         .user-details { display: flex; flex-direction: column; min-width: 0; }
         .user-name { font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-primary); }

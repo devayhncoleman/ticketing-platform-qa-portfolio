@@ -4,6 +4,8 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import TicketDetail from './pages/TicketDetail'
+import Profile from './pages/Profile'
+import ForgotPassword from './pages/ForgotPassword'
 import './index.css'
 
 // Auth Context
@@ -86,6 +88,14 @@ function App() {
           <Route 
             path="/tickets/:id" 
             element={token ? <TicketDetail /> : <Navigate to="/login" />} 
+          />
+          <Route 
+            path="/profile" 
+            element={token ? <Profile /> : <Navigate to="/login" />} 
+          />
+          <Route 
+            path="/forgot-password" 
+            element={token ? <Navigate to="/dashboard" /> : <ForgotPassword />} 
           />
           <Route 
             path="/" 

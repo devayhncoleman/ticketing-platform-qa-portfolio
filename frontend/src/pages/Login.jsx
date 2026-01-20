@@ -1,6 +1,6 @@
 import { useState, useContext } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Terminal, Lock, Mail, Eye, EyeOff, Zap, KeyRound, ArrowLeft } from 'lucide-react'
+import { Terminal, Lock, Mail, Eye, EyeOff, Zap, KeyRound, ArrowLeft, Copy, Check } from 'lucide-react'
 import { AuthContext, API_CONFIG } from '../App'
 
 // The Winning Team Logo Component - Dart from Southeast (we see back/fins)
@@ -60,6 +60,7 @@ function Login() {
   const [verificationCode, setVerificationCode] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [resending, setResending] = useState(false)
+  const [copied, setCopied] = useState(false)
   
   const { login } = useContext(AuthContext)
   const navigate = useNavigate()
@@ -137,6 +138,21 @@ function Login() {
     }
   }
 
+  // Handle paste - auto-fill the code
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      const code = text.replace(/\D/g, '').slice(0, 6)
+      if (code.length === 6) {
+        setVerificationCode(code)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    } catch (err) {
+      console.log('Clipboard access denied')
+    }
+  }
+
   const handleResendCode = async () => {
     setError('')
     setResending(true)
@@ -181,7 +197,13 @@ function Login() {
                 {error && <div className="error-message fade-in"><Zap size={16} /><span>{error}</span></div>}
                 <div className="input-group">
                   <label className="input-label"><KeyRound size={12} style={{ display: 'inline', marginRight: 6 }} />VERIFICATION CODE</label>
-                  <input type="text" className="input-field verification-input" placeholder="000000" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6} required autoFocus />
+                  <div className="code-input-wrapper">
+                    <input type="text" className="input-field verification-input" placeholder="000000" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6} required autoFocus />
+                    <button type="button" className="paste-btn" onClick={handlePaste} title="Paste from clipboard">
+                      {copied ? <Check size={18} /> : <Copy size={18} />}
+                    </button>
+                  </div>
+                  <p className="paste-hint">Tip: Copy code from email and click paste button</p>
                 </div>
                 <button type="submit" className="btn btn-primary btn-full" disabled={verifying || verificationCode.length !== 6}>
                   {verifying ? <><div className="spinner"></div><span>VERIFYING...</span></> : <><KeyRound size={18} /><span>VERIFY ACCOUNT</span></>}
@@ -206,7 +228,11 @@ function Login() {
           .verification-info p { margin-bottom: 8px; }
           .email-highlight { color: var(--accent-primary); font-weight: 600; font-size: 1rem; }
           .text-sm { font-size: 0.8rem; }
-          .verification-input { text-align: center; font-size: 1.5rem !important; letter-spacing: 0.5rem; font-weight: 600; }
+          .code-input-wrapper { position: relative; display: flex; gap: 8px; }
+          .verification-input { flex: 1; text-align: center; font-size: 1.5rem !important; letter-spacing: 0.5rem; font-weight: 600; }
+          .paste-btn { display: flex; align-items: center; justify-content: center; width: 48px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+          .paste-btn:hover { color: var(--accent-primary); border-color: var(--accent-primary); }
+          .paste-hint { font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 8px; font-family: var(--font-mono); }
           .verification-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color); }
           .btn-link { background: none; border: none; color: var(--accent-primary); font-family: var(--font-mono); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; }
           .btn-link:hover { opacity: 0.8; }
@@ -248,7 +274,13 @@ function Login() {
                 {loading ? <><div className="spinner"></div><span>AUTHENTICATING...</span></> : <><Terminal size={18} /><span>INITIALIZE SESSION</span></>}
               </button>
             </form>
-            <div className="login-footer"><span className="text-muted">No account?</span><Link to="/signup" className="signup-link">CREATE_USER →</Link></div>
+            <div className="login-footer">
+              <Link to="/forgot-password" className="forgot-link">Forgot Password?</Link>
+              <div className="signup-section">
+                <span className="text-muted">No account?</span>
+                <Link to="/signup" className="signup-link">CREATE_USER →</Link>
+              </div>
+            </div>
           </div>
         </div>
         <div className="schema-preview">
@@ -271,7 +303,10 @@ function Login() {
         .password-toggle:hover { color: var(--accent-primary); }
         .btn-full { width: 100%; padding: 14px 24px; margin-top: 8px; }
         .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
-        .login-footer { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-color); font-family: var(--font-mono); font-size: 0.85rem; }
+        .login-footer { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-color); font-family: var(--font-mono); font-size: 0.85rem; }
+        .forgot-link { color: var(--text-muted); font-size: 0.8rem; }
+        .forgot-link:hover { color: var(--accent-primary); }
+        .signup-section { display: flex; align-items: center; gap: 8px; }
         .signup-link { color: var(--accent-primary); font-weight: 600; }
         .signup-link:hover { text-decoration: underline; }
         .schema-preview { text-align: center; padding: 16px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; }
