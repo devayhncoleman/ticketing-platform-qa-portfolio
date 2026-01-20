@@ -66,7 +66,148 @@ class InfrastructureStack(Stack):
                 require_symbols=True
             ),
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
-            removal_policy=RemovalPolicy.DESTROY  # For dev environment
+            removal_policy=RemovalPolicy.DESTROY,  # For dev environment
+            
+            # ===== CUSTOM EMAIL CONFIGURATION =====
+            user_verification=cognito.UserVerificationConfig(
+                email_subject="🏆 Verify your account with The Winning Team",
+                email_body="""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #0d0d1a; font-family: 'Courier New', Consolas, monospace;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0d0d1a;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 500px; background-color: #1a1a2e; border: 2px solid #00ff41; border-radius: 12px;">
+                    <!-- Header -->
+                    <tr>
+                        <td align="center" style="padding: 40px 30px 20px;">
+                            <div style="font-size: 28px; color: #00ff41; font-weight: bold; letter-spacing: 2px;">
+                                🏆 THE_WINNING_TEAM
+                            </div>
+                            <div style="font-size: 12px; color: #888; margin-top: 8px;">
+                                >_ Precision Support Portal
+                            </div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 20px 30px;">
+                            <div style="background-color: #0d0d1a; border: 1px solid #333; border-radius: 8px; padding: 24px;">
+                                <div style="color: #00ff41; font-size: 14px; margin-bottom: 16px;">
+                                    // auth.verify()
+                                </div>
+                                <p style="color: #e0e0e0; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">
+                                    Welcome to The Winning Team! Please verify your email address to complete your registration.
+                                </p>
+                                
+                                <div style="background-color: #1a1a2e; border: 2px solid #00ff41; border-radius: 8px; padding: 20px; text-align: center; margin: 24px 0;">
+                                    <div style="color: #888; font-size: 12px; margin-bottom: 8px;">YOUR VERIFICATION CODE</div>
+                                    <div style="color: #00ff41; font-size: 32px; font-weight: bold; letter-spacing: 8px;">{####}</div>
+                                </div>
+                                
+                                <p style="color: #888; font-size: 12px; line-height: 1.6; margin: 20px 0 0;">
+                                    This code expires in 24 hours. If you didn't create an account with The Winning Team, please ignore this email.
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td align="center" style="padding: 20px 30px 40px;">
+                            <p style="color: #555; font-size: 11px; margin: 0;">
+                                © 2026 The Winning Team • Precision Support Portal
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+""",
+                email_style=cognito.VerificationEmailStyle.CODE
+            ),
+            
+            # Custom email for account invitation (admin-created users)
+            user_invitation=cognito.UserInvitationConfig(
+                email_subject="🏆 Welcome to The Winning Team!",
+                email_body="""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #0d0d1a; font-family: 'Courier New', Consolas, monospace;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0d0d1a;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 500px; background-color: #1a1a2e; border: 2px solid #00ff41; border-radius: 12px;">
+                    <!-- Header -->
+                    <tr>
+                        <td align="center" style="padding: 40px 30px 20px;">
+                            <div style="font-size: 28px; color: #00ff41; font-weight: bold; letter-spacing: 2px;">
+                                🏆 THE_WINNING_TEAM
+                            </div>
+                            <div style="font-size: 12px; color: #888; margin-top: 8px;">
+                                >_ Precision Support Portal
+                            </div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 20px 30px;">
+                            <div style="background-color: #0d0d1a; border: 1px solid #333; border-radius: 8px; padding: 24px;">
+                                <div style="color: #00ff41; font-size: 14px; margin-bottom: 16px;">
+                                    // user.invited()
+                                </div>
+                                <p style="color: #e0e0e0; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">
+                                    You've been invited to join The Winning Team! Here are your login credentials:
+                                </p>
+                                
+                                <div style="background-color: #1a1a2e; border: 1px solid #333; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                                    <div style="margin-bottom: 12px;">
+                                        <span style="color: #888; font-size: 12px;">USERNAME:</span>
+                                        <div style="color: #00ff41; font-size: 14px;">{username}</div>
+                                    </div>
+                                    <div>
+                                        <span style="color: #888; font-size: 12px;">TEMPORARY PASSWORD:</span>
+                                        <div style="color: #00ff41; font-size: 14px;">{####}</div>
+                                    </div>
+                                </div>
+                                
+                                <p style="color: #888; font-size: 12px; line-height: 1.6; margin: 20px 0 0;">
+                                    You'll be asked to change your password on first login.
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td align="center" style="padding: 20px 30px 40px;">
+                            <p style="color: #555; font-size: 11px; margin: 0;">
+                                © 2026 The Winning Team • Precision Support Portal
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+            )
         )
 
         # User Pool Client (for web/mobile apps)
