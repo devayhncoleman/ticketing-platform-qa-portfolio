@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'frontend/**'
+      - 'platform/**'
       - '.github/workflows/deploy-frontend.yml'
   workflow_dispatch:  # Allows manual trigger from GitHub UI
 
@@ -39,18 +40,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Deploy to S3
+      - name: Deploy React app to S3
         working-directory: ./frontend
         run: |
           aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_NAME }}/app/ --delete
+
+      - name: Deploy platform pages to S3
+        run: |
+          aws s3 sync ./platform s3://${{ secrets.S3_BUCKET_NAME }}/platform/ --delete
 
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/app/*"
+            --paths "/app/*" "/platform/*"
 
       - name: Deployment complete
         run: |
           echo "✅ Frontend deployed successfully!"
-          echo "🌐 View at: https://d2c5gm37wqp9pk.cloudfront.net/app/index.html"
+          echo "🌐 App: https://d2c5gm37wqp9pk.cloudfront.net/app/"
+          echo "🚀 Platform: https://d2c5gm37wqp9pk.cloudfront.net/platform/"
