@@ -4,6 +4,64 @@ import { Mail, Lock, AlertCircle, LogIn, Eye, EyeOff } from 'lucide-react'
 import { AuthContext, API_CONFIG } from '../App'
 import axios from 'axios'
 
+// Trophy with Arrow Logo Component
+const WinningTeamLogo = ({ size = 64 }) => (
+  <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Outer glow effect */}
+    <defs>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    
+    {/* Trophy Cup */}
+    <path 
+      d="M20 12H44V14C44 14 46 14 48 16C50 18 50 22 48 24C46 26 44 26 44 26V28C44 32 40 36 36 38V42H40C40 42 42 42 42 44V46H22V44C22 42 24 42 24 42H28V38C24 36 20 32 20 28V26C20 26 18 26 16 24C14 22 14 18 16 16C18 14 20 14 20 14V12Z" 
+      stroke="#00ff41" 
+      strokeWidth="2" 
+      fill="rgba(0, 255, 65, 0.1)"
+      filter="url(#glow)"
+    />
+    
+    {/* Trophy handles */}
+    <path 
+      d="M20 16C18 16 16 18 16 20C16 22 18 24 20 24" 
+      stroke="#00ff41" 
+      strokeWidth="2" 
+      fill="none"
+    />
+    <path 
+      d="M44 16C46 16 48 18 48 20C48 22 46 24 44 24" 
+      stroke="#00ff41" 
+      strokeWidth="2" 
+      fill="none"
+    />
+    
+    {/* Trophy base */}
+    <rect x="26" y="46" width="12" height="4" stroke="#00ff41" strokeWidth="2" fill="rgba(0, 255, 65, 0.1)"/>
+    <rect x="22" y="50" width="20" height="3" stroke="#00ff41" strokeWidth="2" fill="rgba(0, 255, 65, 0.1)"/>
+    
+    {/* Arrow going through trophy - tilted for dynamic effect */}
+    <g transform="rotate(-15, 32, 24)">
+      {/* Arrow shaft */}
+      <line x1="8" y1="24" x2="56" y2="24" stroke="#00ff41" strokeWidth="2.5" filter="url(#glow)"/>
+      {/* Arrow head */}
+      <path d="M52 24L46 20V28L52 24Z" fill="#00ff41" filter="url(#glow)"/>
+      {/* Arrow fletching */}
+      <path d="M12 24L16 20M12 24L16 28" stroke="#00ff41" strokeWidth="2"/>
+    </g>
+    
+    {/* Bullseye/target circle in trophy center */}
+    <circle cx="32" cy="22" r="6" stroke="#00ff41" strokeWidth="1.5" fill="none" opacity="0.7"/>
+    <circle cx="32" cy="22" r="3" stroke="#00ff41" strokeWidth="1.5" fill="none" opacity="0.7"/>
+    <circle cx="32" cy="22" r="1" fill="#00ff41"/>
+  </svg>
+)
+
 export default function Login() {
   const navigate = useNavigate()
   const { login: contextLogin } = useContext(AuthContext)
@@ -109,7 +167,7 @@ export default function Login() {
         firstName: decodedToken.given_name || decodedToken.name || 'User',
         lastName: decodedToken.family_name || '',
         sub: decodedToken.sub,
-        role: userRole  // THIS WILL BE SET FROM /users/me OR DEFAULT
+        role: userRole
       }
 
       console.log('[Step 4] ✓ User object created:')
@@ -180,26 +238,64 @@ export default function Login() {
     }}>
       <div style={{
         width: '100%',
-        maxWidth: '400px',
+        maxWidth: '420px',
         background: 'var(--bg-card)',
         border: '1px solid var(--border-color)',
         borderRadius: '12px',
-        padding: '40px 24px'
+        padding: '40px 32px'
       }}>
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+          <WinningTeamLogo size={72} />
+        </div>
+
+        {/* Brand Name */}
+        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
           <h1 style={{
             fontFamily: 'var(--font-mono)',
-            fontSize: '1.5rem',
+            fontSize: '1.4rem',
             color: 'var(--accent-primary)',
-            marginBottom: '8px'
+            letterSpacing: '2px',
+            margin: 0
+          }}>
+            THE_WINNING_TEAM
+          </h1>
+        </div>
+
+        {/* Tagline */}
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <p style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.75rem',
+            color: 'var(--text-muted)',
+            margin: 0
+          }}>
+            <span style={{ color: 'var(--accent-primary)' }}>&gt;_ </span>
+            <span style={{ 
+              color: 'var(--accent-primary)', 
+              background: 'rgba(0, 255, 65, 0.15)',
+              padding: '2px 6px',
+              borderRadius: '3px'
+            }}>Precision</span>
+            {' '}Support Portal
+          </p>
+        </div>
+
+        {/* Login Header */}
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <h2 style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '1.1rem',
+            color: 'var(--text-primary)',
+            marginBottom: '4px'
           }}>
             <span style={{ color: 'var(--text-muted)' }}>&gt;_ </span>
             login()
-          </h1>
+          </h2>
           <p style={{
             color: 'var(--text-muted)',
-            fontSize: '0.85rem'
+            fontSize: '0.8rem',
+            margin: 0
           }}>
             Sign in to your account
           </p>
@@ -394,6 +490,9 @@ export default function Login() {
       <style>{`
         input:focus {
           outline: none;
+        }
+        button:hover:not(:disabled) {
+          box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
         }
       `}</style>
     </div>
