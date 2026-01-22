@@ -4,7 +4,7 @@ import { Mail, Lock, AlertCircle, LogIn, Eye, EyeOff } from 'lucide-react'
 import { AuthContext, API_CONFIG } from '../App'
 import axios from 'axios'
 
-// The Winning Team Logo - Trophy + Target + Arrow
+// The Winning Team Logo - Trophy + Target + Arrow tail (arrow embedded in trophy)
 const WinningTeamLogo = ({ size = 120 }) => (
   <svg width={size} height={size} viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
     {/* Outer target ring */}
@@ -49,15 +49,12 @@ const WinningTeamLogo = ({ size = 120 }) => (
     {/* Base */}
     <line x1="50" y1="90" x2="70" y2="90" stroke="#FFD700" strokeWidth="2.5" strokeLinecap="round"/>
     
-    {/* Arrow shaft */}
-    <line x1="12" y1="12" x2="48" y2="48" stroke="#00ff41" strokeWidth="2.5" strokeLinecap="round"/>
+    {/* Arrow tail sticking out - clean, no puncture mark */}
+    <line x1="8" y1="108" x2="35" y2="81" stroke="#00ff41" strokeWidth="2.5" strokeLinecap="round"/>
     
-    {/* Arrow head */}
-    <polygon points="52,52 43,45 45,55" fill="#00ff41"/>
-    
-    {/* Arrow fletching */}
-    <line x1="12" y1="12" x2="7" y2="18" stroke="#00ff41" strokeWidth="2" strokeLinecap="round"/>
-    <line x1="12" y1="12" x2="18" y2="7" stroke="#00ff41" strokeWidth="2" strokeLinecap="round"/>
+    {/* Fletching */}
+    <line x1="8" y1="108" x2="3" y2="102" stroke="#00ff41" strokeWidth="2" strokeLinecap="round"/>
+    <line x1="8" y1="108" x2="14" y2="114" stroke="#00ff41" strokeWidth="2" strokeLinecap="round"/>
   </svg>
 )
 

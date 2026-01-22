@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo Accounts & Walkthrough | The Winning Team</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-panel: #1a1a24;
+            --accent-primary: #00ff41;
+            --accent-blue: #00d4ff;
+            --accent-purple: #a855f7;
+            --accent-gold: #FFD700;
+            --text-primary: #e0e0e0;
+            --text-muted: #888;
+            --border-color: #2a2a3a;
+            --font-mono: 'Courier New', monospace;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: rgba(10, 10, 15, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .nav-logo svg {
+            width: 40px;
+            height: 40px;
+        }
+
+        .nav-logo span {
+            font-family: var(--font-mono);
+            color: var(--accent-primary);
+            font-size: 1rem;
+            letter-spacing: 1px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-purple);
+        }
+
+        .nav-cta {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
+            color: var(--bg-primary);
+            padding: 10px 24px;
+            border-radius: 6px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+        .nav-cta:hover {
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.4), 0 0 40px rgba(0, 255, 65, 0.3);
+            transform: translateY(-2px);
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 140px 40px 80px;
+            text-align: center;
+            position: relative;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 30% 50%, rgba(0, 255, 65, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 70% 50%, rgba(168, 85, 247, 0.08) 0%, transparent 50%);
+            pointer-events: none;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .hero h1 .highlight {
+            color: var(--accent-primary);
+        }
+
+        .hero p {
+            color: var(--text-muted);
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin: 0 auto 40px;
+            position: relative;
+        }
+
+        /* Role Selector */
+        .role-selector {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 60px;
+            flex-wrap: wrap;
+            padding: 0 20px;
+        }
+
+        .role-btn {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            min-width: 180px;
+        }
+
+        .role-btn:hover {
+            border-color: var(--accent-purple);
+            transform: translateY(-3px);
+        }
+
+        .role-btn.active {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.2);
+        }
+
+        .role-btn .icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .role-btn .name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent-gold);
+        }
+
+        .role-btn .desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 5px;
+        }
+
+        /* Demo Content */
+        .demo-content {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 40px;
+        }
+
+        .demo-panel {
+            display: none;
+        }
+
+        .demo-panel.active {
+            display: block;
+        }
+
+        /* Credentials Card */
+        .creds-card {
+            background: var(--bg-card);
+            border: 2px solid var(--accent-primary);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .creds-card h3 {
+            color: var(--accent-primary);
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            font-family: var(--font-mono);
+        }
+
+        .creds-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 500px;
+            margin: 0 auto 20px;
+        }
+
+        .cred-item {
+            background: var(--bg-panel);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+        }
+
+        .cred-item label {
+            display: block;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+            font-family: var(--font-mono);
+        }
+
+        .cred-item code {
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            color: var(--accent-primary);
+            background: rgba(0, 255, 65, 0.1);
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: block;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .cred-item code:hover {
+            background: rgba(0, 255, 65, 0.2);
+        }
+
+        .copy-hint {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-top: 15px;
+        }
+
+        .login-btn {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            padding: 14px 40px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+        }
+
+        .login-btn:hover {
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.4);
+            transform: translateY(-2px);
+        }
+
+        /* Walkthrough Section */
+        .walkthrough {
+            margin-top: 60px;
+        }
+
+        .walkthrough h2 {
+            font-size: 1.8rem;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .walkthrough h2 .role-name {
+            color: var(--accent-gold);
+        }
+
+        .steps {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .step {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 30px;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 25px;
+            align-items: start;
+            transition: all 0.3s;
+        }
+
+        .step:hover {
+            border-color: var(--accent-purple);
+            box-shadow: 0 10px 40px rgba(168, 85, 247, 0.1);
+        }
+
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--bg-primary);
+        }
+
+        .step-content h3 {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            color: var(--text-primary);
+        }
+
+        .step-content p {
+            color: var(--text-muted);
+            margin-bottom: 15px;
+        }
+
+        .step-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .action-tag {
+            background: rgba(168, 85, 247, 0.1);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: var(--accent-purple);
+            font-family: var(--font-mono);
+        }
+
+        .action-tag.primary {
+            background: rgba(0, 255, 65, 0.1);
+            border-color: rgba(0, 255, 65, 0.3);
+            color: var(--accent-primary);
+        }
+
+        /* Permissions Table */
+        .permissions {
+            margin-top: 50px;
+        }
+
+        .permissions h3 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            text-align: center;
+            color: var(--accent-purple);
+        }
+
+        .perm-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .perm-table th,
+        .perm-table td {
+            padding: 15px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .perm-table th {
+            background: var(--bg-panel);
+            color: var(--accent-gold);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+        }
+
+        .perm-table td {
+            color: var(--text-muted);
+        }
+
+        .perm-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .check {
+            color: var(--accent-primary);
+            font-size: 1.2rem;
+        }
+
+        .cross {
+            color: #ff6b6b;
+            font-size: 1.2rem;
+        }
+
+        /* CTA Section */
+        .cta {
+            text-align: center;
+            padding: 80px 40px;
+            margin-top: 60px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .cta h2 {
+            font-size: 2rem;
+            margin-bottom: 16px;
+        }
+
+        .cta p {
+            color: var(--text-muted);
+            margin-bottom: 30px;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            padding: 16px 40px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.5);
+            transform: translateY(-3px);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            padding: 16px 40px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-decoration: none;
+            border: 2px solid var(--border-color);
+            transition: all 0.3s;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s;
+        }
+
+        .footer-links a:hover {
+            color: var(--accent-purple);
+        }
+
+        .footer-text {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .footer-text .heart {
+            color: #ff6b6b;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            opacity: 0;
+            transition: all 0.3s;
+            z-index: 9999;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .role-selector {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .role-btn {
+                width: 100%;
+                max-width: 300px;
+            }
+
+            .step {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+
+            .step-number {
+                margin: 0 auto;
+            }
+
+            .creds-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .nav-links {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <a href="/platform/" class="nav-logo">
+            <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="60" cy="60" r="52" stroke="#00ff41" stroke-width="2" fill="none" opacity="0.4"/>
+                <circle cx="60" cy="60" r="38" stroke="#00ff41" stroke-width="2" fill="none" opacity="0.6"/>
+                <circle cx="60" cy="60" r="24" stroke="#00ff41" stroke-width="2" fill="none" opacity="0.8"/>
+                <path d="M45 42 H75 V50 C75 65 68 75 60 80 C52 75 45 65 45 50 Z" stroke="#FFD700" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+                <path d="M45 48 C35 48 32 55 32 60 C32 65 35 72 45 72" stroke="#FFD700" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                <path d="M75 48 C85 48 88 55 88 60 C88 65 85 72 75 72" stroke="#FFD700" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                <line x1="60" y1="80" x2="60" y2="90" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="50" y1="90" x2="70" y2="90" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+                <!-- Arrow tail - clean -->
+                <line x1="8" y1="108" x2="35" y2="81" stroke="#00ff41" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="8" y1="108" x2="3" y2="102" stroke="#00ff41" stroke-width="2" stroke-linecap="round"/>
+                <line x1="8" y1="108" x2="14" y2="114" stroke="#00ff41" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span>THE_WINNING_TEAM</span>
+        </a>
+        <div class="nav-links">
+            <a href="/platform/">Platform</a>
+            <a href="/platform/#features">Features</a>
+            <a href="/">About Developer</a>
+            <a href="/app/index.html" class="nav-cta">Launch App →</a>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <h1>Demo <span class="highlight">Accounts</span> & Walkthrough</h1>
+        <p>Experience the platform from different perspectives. Choose a role below to see credentials and a guided walkthrough.</p>
+    </section>
+
+    <!-- Role Selector -->
+    <div class="role-selector">
+        <div class="role-btn active" onclick="showRole('customer')">
+            <div class="icon">👤</div>
+            <div class="name">CUSTOMER</div>
+            <div class="desc">Submit & track tickets</div>
+        </div>
+        <div class="role-btn" onclick="showRole('tech')">
+            <div class="icon">🔧</div>
+            <div class="name">TECH</div>
+            <div class="desc">Resolve support issues</div>
+        </div>
+        <div class="role-btn" onclick="showRole('admin')">
+            <div class="icon">👑</div>
+            <div class="name">ADMIN</div>
+            <div class="desc">Full system control</div>
+        </div>
+    </div>
+
+    <!-- Demo Content -->
+    <div class="demo-content">
+        <!-- Customer Panel -->
+        <div class="demo-panel active" id="customer-panel">
+            <div class="creds-card">
+                <h3>👤 CUSTOMER LOGIN</h3>
+                <div class="creds-grid">
+                    <div class="cred-item">
+                        <label>Email</label>
+                        <code onclick="copyText('customer@demo.com')"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="2c4f595f584341495e6c48494143024f4341">[email&#160;protected]</a></code>
+                    </div>
+                    <div class="cred-item">
+                        <label>Password</label>
+                        <code onclick="copyText('Demo1234!')">Demo1234!</code>
+                    </div>
+                </div>
+                <p class="copy-hint">Click to copy credentials</p>
+                <a href="/app/index.html" class="login-btn">🚀 Login as Customer</a>
+            </div>
+
+            <div class="walkthrough">
+                <h2>Walkthrough: <span class="role-name">Customer Experience</span></h2>
+                
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Login to Your Dashboard</h3>
+                            <p>Use the credentials above to sign in. You'll land on your personal dashboard showing all your submitted tickets.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">View Dashboard</span>
+                                <span class="action-tag">See Ticket Status</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Create a New Ticket</h3>
+                            <p>Click "New Ticket" to submit a support request. Fill in the title, description, and select a priority level.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">New Ticket</span>
+                                <span class="action-tag">Set Priority</span>
+                                <span class="action-tag">Add Description</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Track Your Tickets</h3>
+                            <p>View the status of your tickets in real-time. See when a tech agent picks up your ticket and follows up.</p>
+                            <div class="step-actions">
+                                <span class="action-tag">Open</span>
+                                <span class="action-tag">In Progress</span>
+                                <span class="action-tag">Resolved</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Communicate via Comments</h3>
+                            <p>Add comments to your tickets to provide more information or respond to tech agents. Attach photos if needed.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">Add Comment</span>
+                                <span class="action-tag">Attach Photo</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="permissions">
+                <h3>Customer Permissions</h3>
+                <table class="perm-table">
+                    <tr>
+                        <th>Action</th>
+                        <th>Allowed</th>
+                    </tr>
+                    <tr>
+                        <td>Create tickets</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>View own tickets</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Add comments</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>View other users' tickets</td>
+                        <td><span class="cross">✗</span></td>
+                    </tr>
+                    <tr>
+                        <td>Change ticket status</td>
+                        <td><span class="cross">✗</span></td>
+                    </tr>
+                    <tr>
+                        <td>Manage users</td>
+                        <td><span class="cross">✗</span></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tech Panel -->
+        <div class="demo-panel" id="tech-panel">
+            <div class="creds-card">
+                <h3>🔧 TECH LOGIN</h3>
+                <div class="creds-grid">
+                    <div class="cred-item">
+                        <label>Email</label>
+                        <code onclick="copyText('tech@demo.com')"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="b0c4d5d3d8f0d4d5dddf9ed3dfdd">[email&#160;protected]</a></code>
+                    </div>
+                    <div class="cred-item">
+                        <label>Password</label>
+                        <code onclick="copyText('Demo1234!')">Demo1234!</code>
+                    </div>
+                </div>
+                <p class="copy-hint">Click to copy credentials</p>
+                <a href="/app/index.html" class="login-btn">🚀 Login as Tech</a>
+            </div>
+
+            <div class="walkthrough">
+                <h2>Walkthrough: <span class="role-name">Tech Agent Experience</span></h2>
+                
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>View All Tickets</h3>
+                            <p>Access the tech dashboard to see all tickets across the system. Filter by status, priority, or date.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">View All Tickets</span>
+                                <span class="action-tag">Filter & Sort</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Claim a Ticket</h3>
+                            <p>Select an open ticket and assign it to yourself. This lets customers know their issue is being worked on.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">Assign to Self</span>
+                                <span class="action-tag">Update Status</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Work the Ticket</h3>
+                            <p>Update the ticket status as you progress. Add internal notes or respond to the customer via comments.</p>
+                            <div class="step-actions">
+                                <span class="action-tag">In Progress</span>
+                                <span class="action-tag primary">Add Response</span>
+                                <span class="action-tag">Internal Notes</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Resolve & Close</h3>
+                            <p>Once the issue is fixed, mark the ticket as resolved. The customer will be notified of the resolution.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">Mark Resolved</span>
+                                <span class="action-tag">Close Ticket</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="permissions">
+                <h3>Tech Permissions</h3>
+                <table class="perm-table">
+                    <tr>
+                        <th>Action</th>
+                        <th>Allowed</th>
+                    </tr>
+                    <tr>
+                        <td>View all tickets</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Update ticket status</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Assign tickets</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Add comments</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Delete tickets</td>
+                        <td><span class="cross">✗</span></td>
+                    </tr>
+                    <tr>
+                        <td>Manage users</td>
+                        <td><span class="cross">✗</span></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Admin Panel -->
+        <div class="demo-panel" id="admin-panel">
+            <div class="creds-card">
+                <h3>👑 ADMIN LOGIN</h3>
+                <div class="creds-grid">
+                    <div class="cred-item">
+                        <label>Email</label>
+                        <code onclick="copyText('admin@demo.com')"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="c4a5a0a9adaa84a0a1a9abeaa7aba9">[email&#160;protected]</a></code>
+                    </div>
+                    <div class="cred-item">
+                        <label>Password</label>
+                        <code onclick="copyText('Demo1234!')">Demo1234!</code>
+                    </div>
+                </div>
+                <p class="copy-hint">Click to copy credentials</p>
+                <a href="/app/index.html" class="login-btn">🚀 Login as Admin</a>
+            </div>
+
+            <div class="walkthrough">
+                <h2>Walkthrough: <span class="role-name">Admin Experience</span></h2>
+                
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Access Admin Dashboard</h3>
+                            <p>View the complete system overview with analytics, ticket stats, and user activity at a glance.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">Analytics</span>
+                                <span class="action-tag">System Stats</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Manage All Tickets</h3>
+                            <p>Full control over every ticket. Reassign, escalate, delete, or modify any ticket in the system.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">Full CRUD</span>
+                                <span class="action-tag">Reassign</span>
+                                <span class="action-tag">Delete</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>User Management</h3>
+                            <p>View all users, change roles, and manage permissions. Promote customers to tech or tech to admin.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">View Users</span>
+                                <span class="action-tag">Change Roles</span>
+                                <span class="action-tag">Permissions</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>System Configuration</h3>
+                            <p>Access system settings, view logs, and configure platform behavior.</p>
+                            <div class="step-actions">
+                                <span class="action-tag primary">Settings</span>
+                                <span class="action-tag">Logs</span>
+                                <span class="action-tag">Configuration</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="permissions">
+                <h3>Admin Permissions</h3>
+                <table class="perm-table">
+                    <tr>
+                        <th>Action</th>
+                        <th>Allowed</th>
+                    </tr>
+                    <tr>
+                        <td>Full ticket control</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Delete tickets</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Manage users</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Change user roles</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>View analytics</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>System configuration</td>
+                        <td><span class="check">✓</span></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- CTA -->
+    <section class="cta">
+        <h2>Ready to Explore?</h2>
+        <p>Pick a role above and dive into the platform!</p>
+        <div class="cta-buttons">
+            <a href="/app/index.html" class="btn-primary">🚀 Launch Application</a>
+            <a href="/platform/" class="btn-secondary">← Back to Platform</a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-links">
+            <a href="/">Portfolio</a>
+            <a href="/platform/">Platform</a>
+            <a href="/platform/#features">Features</a>
+            <a href="/app/index.html">Launch App</a>
+            <a href="https://github.com/devayhncoleman/ticketing-platform-qa-portfolio" target="_blank">GitHub</a>
+        </div>
+        <p class="footer-text">
+            Built with <span class="heart">❤️</span> by DeVayhn Coleman | The Winning Team © 2026
+        </p>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">Copied to clipboard!</div>
+
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+        function showRole(role) {
+            // Update buttons
+            document.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Update panels
+            document.querySelectorAll('.demo-panel').forEach(pane
