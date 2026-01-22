@@ -4,61 +4,60 @@ import { Mail, Lock, AlertCircle, LogIn, Eye, EyeOff } from 'lucide-react'
 import { AuthContext, API_CONFIG } from '../App'
 import axios from 'axios'
 
-// Trophy with Arrow Logo Component
-const WinningTeamLogo = ({ size = 64 }) => (
-  <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Outer glow effect */}
-    <defs>
-      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-        <feMerge>
-          <feMergeNode in="coloredBlur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-    </defs>
+// The Winning Team Logo - Trophy + Target + Arrow
+const WinningTeamLogo = ({ size = 120 }) => (
+  <svg width={size} height={size} viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Outer target ring */}
+    <circle cx="60" cy="60" r="52" stroke="#00ff41" strokeWidth="2" fill="none" opacity="0.4"/>
     
-    {/* Trophy Cup */}
-    <path 
-      d="M20 12H44V14C44 14 46 14 48 16C50 18 50 22 48 24C46 26 44 26 44 26V28C44 32 40 36 36 38V42H40C40 42 42 42 42 44V46H22V44C22 42 24 42 24 42H28V38C24 36 20 32 20 28V26C20 26 18 26 16 24C14 22 14 18 16 16C18 14 20 14 20 14V12Z" 
-      stroke="#00ff41" 
-      strokeWidth="2" 
-      fill="rgba(0, 255, 65, 0.1)"
-      filter="url(#glow)"
-    />
+    {/* Middle target ring */}
+    <circle cx="60" cy="60" r="38" stroke="#00ff41" strokeWidth="2" fill="none" opacity="0.6"/>
     
-    {/* Trophy handles */}
+    {/* Inner target ring */}
+    <circle cx="60" cy="60" r="24" stroke="#00ff41" strokeWidth="2" fill="none" opacity="0.8"/>
+    
+    {/* Trophy cup - outlined */}
     <path 
-      d="M20 16C18 16 16 18 16 20C16 22 18 24 20 24" 
-      stroke="#00ff41" 
-      strokeWidth="2" 
+      d="M45 42 H75 V50 C75 65 68 75 60 80 C52 75 45 65 45 50 Z" 
+      stroke="#FFD700" 
+      strokeWidth="2.5" 
       fill="none"
+      strokeLinejoin="round"
     />
+    
+    {/* Left handle */}
     <path 
-      d="M44 16C46 16 48 18 48 20C48 22 46 24 44 24" 
-      stroke="#00ff41" 
-      strokeWidth="2" 
+      d="M45 48 C35 48 32 55 32 60 C32 65 35 72 45 72" 
+      stroke="#FFD700" 
+      strokeWidth="2.5" 
       fill="none"
+      strokeLinecap="round"
     />
     
-    {/* Trophy base */}
-    <rect x="26" y="46" width="12" height="4" stroke="#00ff41" strokeWidth="2" fill="rgba(0, 255, 65, 0.1)"/>
-    <rect x="22" y="50" width="20" height="3" stroke="#00ff41" strokeWidth="2" fill="rgba(0, 255, 65, 0.1)"/>
+    {/* Right handle */}
+    <path 
+      d="M75 48 C85 48 88 55 88 60 C88 65 85 72 75 72" 
+      stroke="#FFD700" 
+      strokeWidth="2.5" 
+      fill="none"
+      strokeLinecap="round"
+    />
     
-    {/* Arrow going through trophy - tilted for dynamic effect */}
-    <g transform="rotate(-15, 32, 24)">
-      {/* Arrow shaft */}
-      <line x1="8" y1="24" x2="56" y2="24" stroke="#00ff41" strokeWidth="2.5" filter="url(#glow)"/>
-      {/* Arrow head */}
-      <path d="M52 24L46 20V28L52 24Z" fill="#00ff41" filter="url(#glow)"/>
-      {/* Arrow fletching */}
-      <path d="M12 24L16 20M12 24L16 28" stroke="#00ff41" strokeWidth="2"/>
-    </g>
+    {/* Stem */}
+    <line x1="60" y1="80" x2="60" y2="90" stroke="#FFD700" strokeWidth="2.5" strokeLinecap="round"/>
     
-    {/* Bullseye/target circle in trophy center */}
-    <circle cx="32" cy="22" r="6" stroke="#00ff41" strokeWidth="1.5" fill="none" opacity="0.7"/>
-    <circle cx="32" cy="22" r="3" stroke="#00ff41" strokeWidth="1.5" fill="none" opacity="0.7"/>
-    <circle cx="32" cy="22" r="1" fill="#00ff41"/>
+    {/* Base */}
+    <line x1="50" y1="90" x2="70" y2="90" stroke="#FFD700" strokeWidth="2.5" strokeLinecap="round"/>
+    
+    {/* Arrow shaft */}
+    <line x1="12" y1="12" x2="48" y2="48" stroke="#00ff41" strokeWidth="2.5" strokeLinecap="round"/>
+    
+    {/* Arrow head */}
+    <polygon points="52,52 43,45 45,55" fill="#00ff41"/>
+    
+    {/* Arrow fletching */}
+    <line x1="12" y1="12" x2="7" y2="18" stroke="#00ff41" strokeWidth="2" strokeLinecap="round"/>
+    <line x1="12" y1="12" x2="18" y2="7" stroke="#00ff41" strokeWidth="2" strokeLinecap="round"/>
   </svg>
 )
 
@@ -245,15 +244,15 @@ export default function Login() {
         padding: '40px 32px'
       }}>
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-          <WinningTeamLogo size={72} />
+        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+          <WinningTeamLogo size={80} />
         </div>
 
         {/* Brand Name */}
         <div style={{ textAlign: 'center', marginBottom: '4px' }}>
           <h1 style={{
             fontFamily: 'var(--font-mono)',
-            fontSize: '1.4rem',
+            fontSize: '1.3rem',
             color: 'var(--accent-primary)',
             letterSpacing: '2px',
             margin: 0
@@ -278,26 +277,6 @@ export default function Login() {
               borderRadius: '3px'
             }}>Precision</span>
             {' '}Support Portal
-          </p>
-        </div>
-
-        {/* Login Header */}
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <h2 style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '1.1rem',
-            color: 'var(--text-primary)',
-            marginBottom: '4px'
-          }}>
-            <span style={{ color: 'var(--text-muted)' }}>&gt;_ </span>
-            login()
-          </h2>
-          <p style={{
-            color: 'var(--text-muted)',
-            fontSize: '0.8rem',
-            margin: 0
-          }}>
-            Sign in to your account
           </p>
         </div>
 
