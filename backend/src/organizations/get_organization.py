@@ -1,6 +1,7 @@
 """
 Get Organization Lambda Function
-Retrieve a single organization by ID
+- Platform Admin: Can view any organization
+- Org Users: Can only view their own organization
 """
 
 import json
@@ -30,68 +31,86 @@ def json_response(status_code, body):
     }
 
 def get_user_claims(event):
-    """Extract user claims from JWT token"""
+    """Extract user claims from JWT token via API Gateway"""
     try:
-        claims = event['requestContext']['authorizer']['claims']
-        return {
-            'userId': claims.get('sub'),
-            'role': claims.get('custom:role', 'customer'),
-            'orgId': claims.get('custom:orgId'),
-            'email': claims.get('email')
+        print(f"Full event: {json.dumps(event, default=str)}")
+        
+        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+        
+        print(f"Extracted claims: {json.dumps(claims, default=str)}")
+        
+        if not claims:
+            print("No claims found in event")
+            return None
+        
+        user_claims = {
+            'userId': claims.get('sub', ''),
+            'role': claims.get('custom:role', ''),
+            'orgId': claims.get('custom:orgId', ''),
+            'email': claims.get('email', '')
         }
-    except (KeyError, TypeError):
+        
+        print(f"User claims: {json.dumps(user_claims)}")
+        return user_claims
+        
+    except Exception as e:
+        print(f"Error extracting claims: {str(e)}")
         return None
 
 def is_platform_admin(claims):
     """Check if user is platform admin"""
-    return claims and claims.get('role') == 'platform_admin'
-
-def user_belongs_to_org(claims, org_id):
-    """Check if user belongs to the specified organization"""
-    if is_platform_admin(claims):
-        return True  # Platform admin can access any org
-    return claims and claims.get('orgId') == org_id
+    if not claims:
+        return False
+    role = claims.get('role', '')
+    print(f"is_platform_admin check - role: '{role}'")
+    return role == 'platform_admin'
 
 def handler(event, context):
     """
     Get a single organization by ID
     
-    Users can only view their own organization
-    Platform admins can view any organization
+    Platform Admin: Can view any organization
+    Other users: Can only view their own organization
     """
+    print("=== getOrganization Lambda started ===")
+    
+    # Get user claims
     claims = get_user_claims(event)
     
-    if not claims:
+    if not claims or not claims.get('userId'):
+        print("Returning 401 - No valid claims")
         return json_response(401, {'error': 'Unauthorized'})
     
-    # Get orgId from path parameters
     try:
-        org_id = event['pathParameters']['orgId']
-    except (KeyError, TypeError):
-        return json_response(400, {'error': 'Missing orgId in path'})
-    
-    # Check authorization
-    if not user_belongs_to_org(claims, org_id):
-        return json_response(403, {
-            'error': 'Forbidden: You do not have access to this organization'
-        })
-    
-    # Fetch organization
-    try:
+        # Get orgId from path parameters
+        org_id = event.get('pathParameters', {}).get('orgId')
+        
+        if not org_id:
+            return json_response(400, {'error': 'Organization ID is required'})
+        
+        print(f"Requested org_id: {org_id}")
+        
+        # Check authorization
+        if not is_platform_admin(claims):
+            # Non-admin users can only view their own org
+            user_org_id = claims.get('orgId', '')
+            if user_org_id != org_id:
+                print(f"User org '{user_org_id}' doesn't match requested org '{org_id}'")
+                return json_response(403, {'error': 'You can only view your own organization'})
+        
+        # Get organization from DynamoDB
         response = organizations_table.get_item(
             Key={'orgId': org_id}
         )
         
-        org = response.get('Item')
+        organization = response.get('Item')
         
-        if not org:
-            return json_response(404, {
-                'error': f'Organization {org_id} not found'
-            })
+        if not organization:
+            return json_response(404, {'error': 'Organization not found'})
         
-        return json_response(200, org)
+        print(f"Returning organization: {org_id}")
+        return json_response(200, organization)
     
     except Exception as e:
-        return json_response(500, {
-            'error': f'Failed to get organization: {str(e)}'
-        })
+        print(f"Error: {str(e)}")
+        return json_response(500, {'error': f'Failed to get organization: {str(e)}'})
