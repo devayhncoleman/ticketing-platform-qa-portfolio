@@ -1,7 +1,6 @@
 """
 Lambda handler for creating comments on tickets
-Supports the chat/conversation feature between customer and tech
-Can include photo attachments (S3 URLs)
+ENHANCED: Multi-tenant support - verifies org access before creating comment
 """
 import json
 import uuid
@@ -13,48 +12,50 @@ from botocore.exceptions import ClientError
 
 from auth import extract_user_from_event
 
-# Initialize AWS resources
+# Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 tickets_table = dynamodb.Table(os.environ.get('TICKETS_TABLE', 'dev-tickets'))
-comments_table = dynamodb.Table(os.environ.get('COMMENTS_TABLE', 'dev-ticket-comments'))
-users_table = dynamodb.Table(os.environ.get('USERS_TABLE', 'dev-users'))
+comments_table = dynamodb.Table(os.environ.get('COMMENTS_TABLE', 'dev-comments'))
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Lambda handler for POST /tickets/{id}/comments
-    Creates a new comment/message on a ticket
+    Lambda handler for POST /tickets/{ticketId}/comments
+    Creates a new comment on a ticket
+    
+    Multi-tenant behavior:
+    - Users can only comment on tickets they can access
+    - Platform admins: Can comment on any ticket
+    - Org admins/Technicians: Can comment on tickets in their organization
+    - Customers: Can only comment on their own tickets
     
     Request body:
-        - content: The comment text (required)
-        - attachments: List of S3 URLs for photos (optional)
-        - isInternal: Boolean - if true, only visible to techs/admins (optional)
+    - content: Comment text (required)
+    - isInternal: Boolean - internal notes only visible to agents (optional)
     """
     try:
         user = extract_user_from_event(event)
         
-        # Get ticket ID from path
-        ticket_id = event.get('pathParameters', {}).get('id')
+        # Get ticket ID from path parameters
+        path_params = event.get('pathParameters') or {}
+        ticket_id = path_params.get('ticketId')
+        
         if not ticket_id:
             return create_response(400, {'error': 'Ticket ID is required'})
         
-        # Verify ticket exists and user has access
-        ticket = tickets_table.get_item(Key={'ticketId': ticket_id}).get('Item')
-        if not ticket:
+        # Fetch the ticket to verify access
+        ticket_response = tickets_table.get_item(Key={'ticketId': ticket_id})
+        
+        if 'Item' not in ticket_response:
             return create_response(404, {'error': 'Ticket not found'})
         
-        # Get user's role
-        user_record = users_table.get_item(Key={'userId': user.user_id}).get('Item')
-        user_role = user_record.get('role', 'CUSTOMER') if user_record else 'CUSTOMER'
+        ticket = ticket_response['Item']
         
-        # Check access: Customer can only comment on their own tickets
-        # Techs can comment on assigned tickets, Admins can comment on any
-        is_owner = ticket.get('createdBy') == user.user_id
-        is_assigned = ticket.get('assignedTo') == user.user_id
-        is_tech_or_admin = user_role in ['TECH', 'ADMIN']
-        
-        if not (is_owner or is_assigned or is_tech_or_admin):
-            return create_response(403, {'error': 'You do not have access to this ticket'})
+        # Check authorization (includes org membership check)
+        if not user.can_access_ticket(ticket):
+            return create_response(403, {
+                'error': 'You do not have permission to comment on this ticket'
+            })
         
         # Parse request body
         body = json.loads(event.get('body', '{}'))
@@ -63,56 +64,49 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not content:
             return create_response(400, {'error': 'Comment content is required'})
         
-        # Validate attachments (must be valid S3 URLs, max 5 photos)
-        attachments = body.get('attachments', [])
-        if len(attachments) > 5:
-            return create_response(400, {'error': 'Maximum 5 attachments per comment'})
-        
-        # Validate attachment URLs (basic check)
-        bucket_name = os.environ.get('ATTACHMENTS_BUCKET', '')
-        for url in attachments:
-            if not isinstance(url, str) or (bucket_name and bucket_name not in url):
-                return create_response(400, {'error': 'Invalid attachment URL'})
-        
-        # Internal comments only allowed for tech/admin
+        # Check if this is an internal note (only agents can create internal notes)
         is_internal = body.get('isInternal', False)
-        if is_internal and user_role == 'CUSTOMER':
-            is_internal = False  # Customers can't create internal notes
+        if is_internal and not user.is_agent:
+            return create_response(403, {
+                'error': 'Only agents can create internal notes'
+            })
         
-        # Create comment
+        # Create comment object
         comment_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         
         comment = {
-            'ticketId': ticket_id,
             'commentId': comment_id,
+            'ticketId': ticket_id,
+            'orgId': ticket.get('orgId'),  # Inherit org from ticket
             'content': content,
-            'authorId': user.user_id,
-            'authorEmail': user.email,
-            'authorName': f"{user_record.get('firstName', '')} {user_record.get('lastName', '')}".strip() if user_record else user.email,
-            'authorRole': user_role,
-            'attachments': attachments,
             'isInternal': is_internal,
-            'createdAt': now
+            'createdBy': user.user_id,
+            'createdByEmail': user.email,
+            'createdByName': user.full_name,
+            'createdByRole': user.role,
+            'createdAt': now,
+            'updatedAt': now
         }
         
-        # Save comment
+        # Save to DynamoDB
         comments_table.put_item(Item=comment)
         
         # Update ticket's updatedAt timestamp
         tickets_table.update_item(
             Key={'ticketId': ticket_id},
-            UpdateExpression='SET updatedAt = :now, lastCommentAt = :now',
-            ExpressionAttributeValues={':now': now}
+            UpdateExpression='SET updatedAt = :updatedAt',
+            ExpressionAttributeValues={':updatedAt': now}
         )
         
-        print(f"Comment {comment_id} created on ticket {ticket_id} by {user.email}")
+        print(f"User {user.email} created comment {comment_id} on ticket {ticket_id}")
         return create_response(201, comment)
         
     except json.JSONDecodeError:
         return create_response(400, {'error': 'Invalid JSON in request body'})
     except ClientError as e:
-        print(f"DynamoDB error: {e}")
+        error_code = e.response['Error']['Code']
+        print(f"DynamoDB error: {error_code} - {e}")
         return create_response(500, {'error': 'Failed to create comment'})
     except Exception as e:
         print(f"Unexpected error: {str(e)}")

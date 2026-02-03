@@ -1,118 +1,204 @@
 """
-Lambda handler for getting current user's profile and role from DynamoDB
-Endpoint: GET /users/me
-Returns: { userId, email, role, firstName, lastName }
-
-FILE LOCATION: backend/src/functions/get_user_me.py
+Lambda handler for getting current user's profile
+ENHANCED: Multi-tenant support - includes orgId in response
 """
 import json
-import boto3
 import os
+from datetime import datetime, timezone
+from typing import Dict, Any
+import boto3
+from botocore.exceptions import ClientError
 
-dynamodb = boto3.resource('dynamodb')
-users_table_name = os.environ.get('USERS_TABLE', 'dev-users')
-users_table = dynamodb.Table(users_table_name)
+from auth import extract_user_from_event
+
+# Initialize DynamoDB
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+users_table = dynamodb.Table(os.environ.get('USERS_TABLE', 'dev-users'))
+organizations_table = dynamodb.Table(os.environ.get('ORGANIZATIONS_TABLE', 'dev-organizations'))
 
 
-def handler(event, context):
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Get the current authenticated user's profile and role from DynamoDB
-    Uses the Cognito 'sub' claim from the JWT token
+    Lambda handler for GET /users/me
+    Returns the authenticated user's profile information
     
-    Endpoint: GET /users/me
-    Response: 200 { userId, email, role, firstName, lastName }
+    Multi-tenant: Includes organization information if user belongs to one
+    
+    Response includes:
+    - User profile from database (or created if not exists)
+    - Organization details (if user belongs to one)
+    - Role and permissions context
     """
     try:
-        print(f"Event: {json.dumps(event)}")
+        user = extract_user_from_event(event)
         
-        # Extract user ID from authorization context
-        # API Gateway Cognito authorizer puts claims in the requestContext
-        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-        user_id = claims.get('sub')
+        # Try to get user from database
+        response = users_table.get_item(Key={'userId': user.user_id})
         
-        print(f"User ID: {user_id}, Email: {claims.get('email')}")
+        if 'Item' in response:
+            user_data = response['Item']
+            # Update with latest info from token if changed
+            user_data = sync_user_data(user, user_data)
+        else:
+            # Create new user record
+            user_data = create_user_record(user)
         
-        if not user_id:
-            print("ERROR: No user ID found in claims")
-            return error_response(401, 'Unauthorized: No user ID found')
-
-        # Query DynamoDB users table by userId (Partition Key)
-        try:
-            response = users_table.get_item(Key={'userId': user_id})
-            print(f"DynamoDB response: {response}")
-            
-            if 'Item' not in response:
-                # User exists in Cognito but hasn't created a ticket yet
-                # Return default CUSTOMER role with Cognito info
-                print(f"User not in database, returning CUSTOMER role")
-                return success_response({
-                    'userId': user_id,
-                    'email': claims.get('email', ''),
-                    'role': 'CUSTOMER',  # Default role
-                    'firstName': claims.get('given_name', ''),
-                    'lastName': claims.get('family_name', '')
-                })
-            
-            # User exists in database, return their data
-            item = response['Item']
-            print(f"Found user in database with role: {item.get('role')}")
-            
-            # Convert Decimal types to strings if needed (DynamoDB returns Decimal)
-            result = {
-                'userId': item.get('userId'),
-                'email': item.get('email'),
-                'role': item.get('role', 'CUSTOMER'),
-                'firstName': item.get('firstName', ''),
-                'lastName': item.get('lastName', ''),
-                'createdAt': str(item.get('createdAt', ''))
-            }
-            
-            print(f"Returning user data: {result}")
-            return success_response(result)
-            
-        except Exception as db_error:
-            print(f'Database error: {str(db_error)}')
-            # If we can't query DB, return Cognito info with default role
-            return success_response({
-                'userId': user_id,
-                'email': claims.get('email', ''),
-                'role': 'CUSTOMER',
-                'firstName': claims.get('given_name', ''),
-                'lastName': claims.get('family_name', ''),
-                'warning': 'Could not fetch full profile, using defaults'
-            })
-    
+        # Get organization details if user belongs to one
+        org_data = None
+        org_id = user_data.get('orgId') or user.org_id
+        if org_id:
+            org_data = get_organization(org_id)
+        
+        # Build response
+        profile = {
+            'userId': user_data.get('userId'),
+            'email': user_data.get('email'),
+            'firstName': user_data.get('firstName', ''),
+            'lastName': user_data.get('lastName', ''),
+            'fullName': f"{user_data.get('firstName', '')} {user_data.get('lastName', '')}".strip() or user_data.get('email'),
+            'role': user_data.get('role', 'customer'),
+            'orgId': org_id,
+            'organization': org_data,
+            'permissions': get_user_permissions(user),
+            'createdAt': user_data.get('createdAt'),
+            'updatedAt': user_data.get('updatedAt')
+        }
+        
+        print(f"User {user.email} retrieved their profile")
+        return create_response(200, profile)
+        
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        print(f"DynamoDB error: {error_code} - {e}")
+        return create_response(500, {'error': 'Failed to retrieve user profile'})
     except Exception as e:
-        print(f'Unexpected error: {str(e)}')
-        return error_response(500, f'Internal server error: {str(e)}')
+        print(f"Unexpected error: {str(e)}")
+        return create_response(500, {'error': 'Internal server error'})
 
 
-def success_response(data):
-    """Return successful 200 response with CORS headers"""
+def create_user_record(user) -> Dict[str, Any]:
+    """Create a new user record in the database."""
+    now = datetime.now(timezone.utc).isoformat()
+    
+    user_data = {
+        'userId': user.user_id,
+        'email': user.email,
+        'firstName': user.given_name or '',
+        'lastName': user.family_name or '',
+        'role': user.role,
+        'orgId': user.org_id,
+        'createdAt': now,
+        'updatedAt': now
+    }
+    
+    users_table.put_item(Item=user_data)
+    print(f"Created new user record for {user.email}")
+    
+    return user_data
+
+
+def sync_user_data(user, existing_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Sync user data from JWT token to database if changed.
+    Returns the updated user data.
+    """
+    updates_needed = False
+    update_expression_parts = []
+    expression_values = {}
+    
+    # Check for changes
+    if user.email != existing_data.get('email'):
+        update_expression_parts.append('email = :email')
+        expression_values[':email'] = user.email
+        updates_needed = True
+    
+    if user.given_name and user.given_name != existing_data.get('firstName'):
+        update_expression_parts.append('firstName = :firstName')
+        expression_values[':firstName'] = user.given_name
+        updates_needed = True
+    
+    if user.family_name and user.family_name != existing_data.get('lastName'):
+        update_expression_parts.append('lastName = :lastName')
+        expression_values[':lastName'] = user.family_name
+        updates_needed = True
+    
+    if user.role != existing_data.get('role'):
+        update_expression_parts.append('#role = :role')
+        expression_values[':role'] = user.role
+        updates_needed = True
+    
+    if user.org_id and user.org_id != existing_data.get('orgId'):
+        update_expression_parts.append('orgId = :orgId')
+        expression_values[':orgId'] = user.org_id
+        updates_needed = True
+    
+    if updates_needed:
+        update_expression_parts.append('updatedAt = :updatedAt')
+        expression_values[':updatedAt'] = datetime.now(timezone.utc).isoformat()
+        
+        update_kwargs = {
+            'Key': {'userId': user.user_id},
+            'UpdateExpression': 'SET ' + ', '.join(update_expression_parts),
+            'ExpressionAttributeValues': expression_values,
+            'ReturnValues': 'ALL_NEW'
+        }
+        
+        # Handle reserved word 'role'
+        if ':role' in expression_values:
+            update_kwargs['ExpressionAttributeNames'] = {'#role': 'role'}
+        
+        response = users_table.update_item(**update_kwargs)
+        print(f"Synced user data for {user.email}")
+        return response['Attributes']
+    
+    return existing_data
+
+
+def get_organization(org_id: str) -> Dict[str, Any]:
+    """Fetch organization details."""
+    try:
+        response = organizations_table.get_item(Key={'orgId': org_id})
+        if 'Item' in response:
+            org = response['Item']
+            # Return safe subset of org data
+            return {
+                'orgId': org.get('orgId'),
+                'name': org.get('name'),
+                'slug': org.get('slug'),
+                'theme': org.get('theme'),
+                'status': org.get('status')
+            }
+    except Exception as e:
+        print(f"Error fetching organization {org_id}: {e}")
+    return None
+
+
+def get_user_permissions(user) -> Dict[str, bool]:
+    """Get user's permission flags based on role."""
     return {
-        'statusCode': 200,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
-        },
-        'body': json.dumps(data)
+        'canManageOrganization': user.is_platform_admin or user.is_org_admin,
+        'canManageUsers': user.is_platform_admin or user.is_org_admin,
+        'canAssignTickets': user.is_agent,
+        'canViewAllTickets': user.is_agent,
+        'canCreateInternalNotes': user.is_agent,
+        'canDeleteTickets': user.is_agent,
+        'canHardDeleteTickets': user.is_platform_admin,
+        'isPlatformAdmin': user.is_platform_admin,
+        'isOrgAdmin': user.is_org_admin,
+        'isTechnician': user.is_technician,
+        'isCustomer': user.is_customer
     }
 
 
-def error_response(status_code, message):
-    """Return error response with CORS headers"""
+def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Create standardized API Gateway response."""
     return {
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
             'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
         },
-        'body': json.dumps({
-            'error': message,
-            'statusCode': status_code
-        })
+        'body': json.dumps(body, default=str)
     }

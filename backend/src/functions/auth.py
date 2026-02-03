@@ -1,6 +1,8 @@
 """
 Authentication utilities for extracting user info from Cognito JWT tokens.
 Used by all Lambda functions to get authenticated user context.
+
+ENHANCED: Added multi-tenant support with orgId and platform roles
 """
 from typing import Dict, Any, Optional
 import base64
@@ -10,18 +12,24 @@ import json
 class UserContext:
     """
     Represents the authenticated user from Cognito JWT token.
+    
+    Supports multi-tenant architecture with:
+    - Platform roles: platform_admin, org_admin, technician, customer
+    - Organization membership via orgId
     """
     def __init__(
         self,
         user_id: str,
         email: str,
-        role: str = "CUSTOMER",
+        role: str = "customer",
+        org_id: Optional[str] = None,
         given_name: Optional[str] = None,
         family_name: Optional[str] = None
     ):
         self.user_id = user_id  # Cognito sub (unique identifier)
         self.email = email
-        self.role = role.upper()
+        self.role = role.lower()  # Normalize to lowercase
+        self.org_id = org_id  # Organization ID for multi-tenancy
         self.given_name = given_name
         self.family_name = family_name
     
@@ -32,44 +40,147 @@ class UserContext:
             return f"{self.given_name} {self.family_name}"
         return self.email
     
-    @property
-    def is_admin(self) -> bool:
-        return self.role == "ADMIN"
+    # ===========================================
+    # Platform Role Checks
+    # ===========================================
     
     @property
-    def is_agent(self) -> bool:
-        return self.role in ("ADMIN", "AGENT")
+    def is_platform_admin(self) -> bool:
+        """Platform admins can manage all organizations and users."""
+        return self.role == "platform_admin"
+    
+    @property
+    def is_org_admin(self) -> bool:
+        """Org admins can manage their organization's settings and users."""
+        return self.role == "org_admin"
+    
+    @property
+    def is_technician(self) -> bool:
+        """Technicians can work on tickets within their organization."""
+        return self.role == "technician"
     
     @property
     def is_customer(self) -> bool:
-        return self.role == "CUSTOMER"
+        """Customers can create and view their own tickets."""
+        return self.role == "customer"
+    
+    # ===========================================
+    # Legacy Role Checks (for backward compatibility)
+    # ===========================================
+    
+    @property
+    def is_admin(self) -> bool:
+        """Legacy: Maps to platform_admin or org_admin."""
+        return self.is_platform_admin or self.is_org_admin
+    
+    @property
+    def is_agent(self) -> bool:
+        """Legacy: Maps to platform_admin, org_admin, or technician."""
+        return self.is_platform_admin or self.is_org_admin or self.is_technician
+    
+    # ===========================================
+    # Organization Access Checks
+    # ===========================================
+    
+    def can_access_org(self, org_id: str) -> bool:
+        """Check if user can access a specific organization's data."""
+        # Platform admins can access all orgs
+        if self.is_platform_admin:
+            return True
+        # Others can only access their own org
+        return self.org_id == org_id
+    
+    def can_manage_org(self, org_id: str) -> bool:
+        """Check if user can manage organization settings."""
+        # Platform admins can manage all orgs
+        if self.is_platform_admin:
+            return True
+        # Org admins can manage their own org
+        return self.is_org_admin and self.org_id == org_id
+    
+    # ===========================================
+    # Ticket Access Checks (Multi-tenant aware)
+    # ===========================================
     
     def can_access_ticket(self, ticket: Dict[str, Any]) -> bool:
         """Check if user can access a specific ticket."""
-        # Admins and agents can access all tickets
-        if self.is_agent:
+        ticket_org_id = ticket.get('orgId')
+        
+        # Platform admins can access all tickets
+        if self.is_platform_admin:
             return True
+        
+        # Must be in the same org to access ticket
+        if ticket_org_id and self.org_id != ticket_org_id:
+            return False
+        
+        # Org admins and technicians can access all tickets in their org
+        if self.is_org_admin or self.is_technician:
+            return True
+        
         # Customers can only access their own tickets
         return ticket.get('createdBy') == self.user_id
     
     def can_update_ticket(self, ticket: Dict[str, Any]) -> bool:
         """Check if user can update a specific ticket."""
-        # Admins and agents can update all tickets
-        if self.is_agent:
+        ticket_org_id = ticket.get('orgId')
+        
+        # Platform admins can update all tickets
+        if self.is_platform_admin:
             return True
+        
+        # Must be in the same org
+        if ticket_org_id and self.org_id != ticket_org_id:
+            return False
+        
+        # Org admins and technicians can update tickets in their org
+        if self.is_org_admin or self.is_technician:
+            return True
+        
         # Customers can only update their own tickets
         return ticket.get('createdBy') == self.user_id
     
     def can_delete_ticket(self, ticket: Dict[str, Any], hard_delete: bool = False) -> bool:
         """Check if user can delete a specific ticket."""
-        # Hard delete is admin only
+        ticket_org_id = ticket.get('orgId')
+        
+        # Hard delete is platform admin only
         if hard_delete:
-            return self.is_admin
-        # Soft delete: Admins and agents can delete any ticket
-        if self.is_agent:
+            return self.is_platform_admin
+        
+        # Platform admins can delete any ticket
+        if self.is_platform_admin:
             return True
+        
+        # Must be in the same org
+        if ticket_org_id and self.org_id != ticket_org_id:
+            return False
+        
+        # Org admins can delete tickets in their org
+        if self.is_org_admin:
+            return True
+        
+        # Technicians can soft delete tickets they're working on
+        if self.is_technician:
+            return True
+        
         # Customers can only delete their own tickets
         return ticket.get('createdBy') == self.user_id
+    
+    def can_assign_ticket(self, ticket: Dict[str, Any]) -> bool:
+        """Check if user can assign a ticket to a technician."""
+        ticket_org_id = ticket.get('orgId')
+        
+        # Platform admins can assign any ticket
+        if self.is_platform_admin:
+            return True
+        
+        # Must be in the same org
+        if ticket_org_id and self.org_id != ticket_org_id:
+            return False
+        
+        # Org admins and technicians can assign tickets in their org
+        return self.is_org_admin or self.is_technician
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for logging/debugging."""
@@ -77,6 +188,7 @@ class UserContext:
             'user_id': self.user_id,
             'email': self.email,
             'role': self.role,
+            'org_id': self.org_id,
             'given_name': self.given_name,
             'family_name': self.family_name
         }
@@ -107,7 +219,8 @@ def extract_user_from_event(event: Dict[str, Any]) -> UserContext:
         return UserContext(
             user_id='test-user-123',
             email='test@example.com',
-            role='CUSTOMER',
+            role='customer',
+            org_id='test-org-123',
             given_name='Test',
             family_name='User'
         )
@@ -116,9 +229,12 @@ def extract_user_from_event(event: Dict[str, Any]) -> UserContext:
     user_id = claims.get('sub', 'unknown')
     email = claims.get('email', claims.get('cognito:username', 'unknown@example.com'))
     
-    # Get role from custom attribute or default to CUSTOMER
+    # Get role from custom attribute or default to customer
     # Cognito custom attributes are prefixed with 'custom:'
-    role = claims.get('custom:role', 'CUSTOMER')
+    role = claims.get('custom:role', 'customer')
+    
+    # Get organization ID from custom attribute
+    org_id = claims.get('custom:orgId', None)
     
     # Get name attributes
     given_name = claims.get('given_name')
@@ -128,11 +244,12 @@ def extract_user_from_event(event: Dict[str, Any]) -> UserContext:
         user_id=user_id,
         email=email,
         role=role,
+        org_id=org_id,
         given_name=given_name,
         family_name=family_name
     )
     
-    print(f"Authenticated user: {user.email} (role: {user.role}, id: {user.user_id})")
+    print(f"Authenticated user: {user.email} (role: {user.role}, org: {user.org_id}, id: {user.user_id})")
     
     return user
 

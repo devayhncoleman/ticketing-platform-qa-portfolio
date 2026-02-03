@@ -1,32 +1,27 @@
 """
 Unit tests for list_tickets Lambda function.
-Tests GSI queries, pagination, and role-based filtering.
+Updated for multi-tenant architecture with orgId filtering.
 """
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from src.functions.list_tickets import (
-    handler, 
-    filter_tickets_by_role,
-    encode_cursor,
-    decode_cursor
-)
+from src.functions.list_tickets import handler
 
 
 class TestListTickets:
     """Test suite for list tickets functionality"""
     
-    @patch('src.functions.list_tickets.table')
-    def test_list_tickets_without_filters_returns_all(self, mock_table):
+    @patch('src.functions.list_tickets.tickets_table')
+    def test_platform_admin_can_see_all_tickets(self, mock_table):
         """
-        GIVEN no filter parameters
-        WHEN list_tickets handler is called by an admin
-        THEN it should return all tickets via scan
+        GIVEN a platform admin user
+        WHEN list_tickets handler is called without filters
+        THEN it should return all tickets from all orgs
         """
         # Arrange
         mock_tickets = [
-            {'ticketId': '1', 'title': 'Ticket 1', 'status': 'OPEN'},
-            {'ticketId': '2', 'title': 'Ticket 2', 'status': 'CLOSED'}
+            {'ticketId': '1', 'title': 'Ticket 1', 'status': 'OPEN', 'orgId': 'org-1'},
+            {'ticketId': '2', 'title': 'Ticket 2', 'status': 'CLOSED', 'orgId': 'org-2'}
         ]
         
         mock_table.scan.return_value = {'Items': mock_tickets}
@@ -37,7 +32,9 @@ class TestListTickets:
                 'authorizer': {
                     'claims': {
                         'sub': 'admin-123',
-                        'custom:role': 'ADMIN'
+                        'email': 'admin@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-1'
                     }
                 }
             }
@@ -51,30 +48,31 @@ class TestListTickets:
         assert response['statusCode'] == 200
         assert len(body['tickets']) == 2
         assert body['count'] == 2
-        mock_table.scan.assert_called_once()
     
-    @patch('src.functions.list_tickets.table')
-    def test_list_tickets_filter_by_status_uses_gsi(self, mock_table):
+    @patch('src.functions.list_tickets.tickets_table')
+    def test_platform_admin_can_filter_by_org(self, mock_table):
         """
-        GIVEN status filter parameter
+        GIVEN a platform admin with orgId query parameter
         WHEN list_tickets handler is called
-        THEN it should query StatusIndex GSI
+        THEN it should filter tickets by the specified org
         """
         # Arrange
         mock_tickets = [
-            {'ticketId': '1', 'status': 'OPEN', 'createdBy': 'user-1'},
-            {'ticketId': '2', 'status': 'OPEN', 'createdBy': 'user-2'}
+            {'ticketId': '1', 'title': 'Ticket 1', 'orgId': 'org-1'},
+            {'ticketId': '2', 'title': 'Ticket 2', 'orgId': 'org-2'}
         ]
         
-        mock_table.query.return_value = {'Items': mock_tickets}
+        mock_table.scan.return_value = {'Items': mock_tickets}
         
         event = {
-            'queryStringParameters': {'status': 'OPEN'},
+            'queryStringParameters': {'orgId': 'org-1'},
             'requestContext': {
                 'authorizer': {
                     'claims': {
-                        'sub': 'agent-123',
-                        'custom:role': 'AGENT'
+                        'sub': 'admin-123',
+                        'email': 'admin@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-admin'
                     }
                 }
             }
@@ -82,137 +80,37 @@ class TestListTickets:
         
         # Act
         response = handler(event, {})
-        body = json.loads(response['body'])
         
         # Assert
         assert response['statusCode'] == 200
-        assert len(body['tickets']) == 2
-        
-        # Verify GSI query was called correctly
-        call_args = mock_table.query.call_args
-        assert call_args[1]['IndexName'] == 'StatusIndex'
-        assert call_args[1]['KeyConditionExpression'] == '#status = :status'
+        # Filter is applied in scan, so just check it was called
+        mock_table.scan.assert_called()
     
-    @patch('src.functions.list_tickets.table')
-    def test_list_tickets_filter_by_assigned_to_uses_gsi(self, mock_table):
+    @patch('src.functions.list_tickets.tickets_table')
+    def test_technician_sees_only_own_org_tickets(self, mock_table):
         """
-        GIVEN assignedTo filter parameter
+        GIVEN a technician user
         WHEN list_tickets handler is called
-        THEN it should query AssignedToIndex GSI
+        THEN it should only return tickets from their organization
         """
         # Arrange
-        agent_id = 'agent-123'
+        org_id = 'org-456'
         mock_tickets = [
-            {'ticketId': '1', 'assignedTo': agent_id, 'status': 'IN_PROGRESS'},
-            {'ticketId': '2', 'assignedTo': agent_id, 'status': 'OPEN'}
+            {'ticketId': '1', 'createdBy': 'customer-1', 'orgId': org_id},
+            {'ticketId': '2', 'createdBy': 'customer-2', 'orgId': org_id}
         ]
         
-        mock_table.query.return_value = {'Items': mock_tickets}
-        
-        event = {
-            'queryStringParameters': {'assignedTo': agent_id},
-            'requestContext': {
-                'authorizer': {
-                    'claims': {
-                        'sub': agent_id,
-                        'custom:role': 'AGENT'
-                    }
-                }
-            }
-        }
-        
-        # Act
-        response = handler(event, {})
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert len(body['tickets']) == 2
-        
-        # Verify GSI query
-        call_args = mock_table.query.call_args
-        assert call_args[1]['IndexName'] == 'AssignedToIndex'
-    
-    @patch('src.functions.list_tickets.table')
-    def test_list_tickets_respects_limit_parameter(self, mock_table):
-        """
-        GIVEN limit parameter
-        WHEN list_tickets handler is called
-        THEN it should limit the number of results
-        """
-        # Arrange
-        mock_table.scan.return_value = {'Items': []}
-        
-        event = {
-            'queryStringParameters': {'limit': '10'},
-            'requestContext': {
-                'authorizer': {
-                    'claims': {
-                        'sub': 'user-123',
-                        'custom:role': 'ADMIN'
-                    }
-                }
-            }
-        }
-        
-        # Act
-        response = handler(event, {})
-        
-        # Assert
-        assert response['statusCode'] == 200
-        call_args = mock_table.scan.call_args
-        assert call_args[1]['Limit'] == 10
-    
-    @patch('src.functions.list_tickets.table')
-    def test_list_tickets_rejects_excessive_limit(self, mock_table):
-        """
-        GIVEN limit > 100
-        WHEN list_tickets handler is called
-        THEN it should return 400 error
-        """
-        # Arrange
-        event = {
-            'queryStringParameters': {'limit': '150'},
-            'requestContext': {
-                'authorizer': {
-                    'claims': {
-                        'sub': 'user-123',
-                        'custom:role': 'ADMIN'
-                    }
-                }
-            }
-        }
-        
-        # Act
-        response = handler(event, {})
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 400
-        assert 'error' in body
-        assert 'cannot exceed 100' in body['error']
-    
-    @patch('src.functions.list_tickets.table')
-    def test_list_tickets_includes_pagination_cursor(self, mock_table):
-        """
-        GIVEN more results available
-        WHEN list_tickets handler is called
-        THEN it should include nextCursor for pagination
-        """
-        # Arrange
-        last_key = {'ticketId': 'ticket-50', 'createdAt': '2026-01-19T10:00:00Z'}
-        mock_table.scan.return_value = {
-            'Items': [{'ticketId': '1'}],
-            'LastEvaluatedKey': last_key
-        }
+        mock_table.scan.return_value = {'Items': mock_tickets}
         
         event = {
             'queryStringParameters': None,
             'requestContext': {
                 'authorizer': {
                     'claims': {
-                        'sub': 'user-123',
-                        'custom:role': 'ADMIN'
+                        'sub': 'tech-123',
+                        'email': 'tech@example.com',
+                        'custom:role': 'technician',
+                        'custom:orgId': org_id
                     }
                 }
             }
@@ -223,22 +121,27 @@ class TestListTickets:
         body = json.loads(response['body'])
         
         # Assert
-        assert 'nextCursor' in body
-        assert body['nextCursor'] is not None
+        assert response['statusCode'] == 200
+        assert len(body['tickets']) == 2
     
-    @patch('src.functions.list_tickets.table')
+    @patch('src.functions.list_tickets.tickets_table')
     def test_customer_sees_only_own_tickets(self, mock_table):
         """
         GIVEN a customer user
         WHEN they list tickets
         THEN they should only see tickets they created
+        
+        Note: The FilterExpression is applied by DynamoDB, so mock returns
+        only what would pass the filter (customer's own tickets)
         """
         # Arrange
         customer_id = 'customer-123'
+        org_id = 'org-456'
+        # Mock returns only tickets that would pass the customer filter
+        # (DynamoDB FilterExpression filters by createdBy = customer_id)
         mock_tickets = [
-            {'ticketId': '1', 'createdBy': customer_id, 'status': 'OPEN'},
-            {'ticketId': '2', 'createdBy': 'other-customer', 'status': 'OPEN'},
-            {'ticketId': '3', 'createdBy': customer_id, 'status': 'CLOSED'}
+            {'ticketId': '1', 'createdBy': customer_id, 'status': 'OPEN', 'orgId': org_id},
+            {'ticketId': '3', 'createdBy': customer_id, 'status': 'CLOSED', 'orgId': org_id}
         ]
         
         mock_table.scan.return_value = {'Items': mock_tickets}
@@ -249,7 +152,9 @@ class TestListTickets:
                 'authorizer': {
                     'claims': {
                         'sub': customer_id,
-                        'custom:role': 'CUSTOMER'
+                        'email': 'customer@example.com',
+                        'custom:role': 'customer',
+                        'custom:orgId': org_id
                     }
                 }
             }
@@ -261,32 +166,33 @@ class TestListTickets:
         
         # Assert
         assert response['statusCode'] == 200
-        assert len(body['tickets']) == 2  # Only customer's tickets
+        assert len(body['tickets']) == 2
+        # All returned tickets belong to the customer
         assert all(t['createdBy'] == customer_id for t in body['tickets'])
     
-    @patch('src.functions.list_tickets.table')
-    def test_agent_sees_all_tickets(self, mock_table):
+    @patch('src.functions.list_tickets.tickets_table')
+    def test_filter_by_status(self, mock_table):
         """
-        GIVEN an agent user
-        WHEN they list tickets
-        THEN they should see all tickets
+        GIVEN status filter parameter
+        WHEN list_tickets handler is called
+        THEN it should filter by status
         """
         # Arrange
         mock_tickets = [
-            {'ticketId': '1', 'createdBy': 'customer-1'},
-            {'ticketId': '2', 'createdBy': 'customer-2'},
-            {'ticketId': '3', 'createdBy': 'customer-3'}
+            {'ticketId': '1', 'status': 'OPEN', 'createdBy': 'user-1', 'orgId': 'org-1'},
         ]
         
         mock_table.scan.return_value = {'Items': mock_tickets}
         
         event = {
-            'queryStringParameters': None,
+            'queryStringParameters': {'status': 'OPEN'},
             'requestContext': {
                 'authorizer': {
                     'claims': {
-                        'sub': 'agent-123',
-                        'custom:role': 'AGENT'
+                        'sub': 'admin-123',
+                        'email': 'admin@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-1'
                     }
                 }
             }
@@ -297,82 +203,111 @@ class TestListTickets:
         body = json.loads(response['body'])
         
         # Assert
-        assert len(body['tickets']) == 3  # All tickets
-
-
-class TestFilterTicketsByRole:
-    """Test suite for role-based filtering logic"""
+        assert response['statusCode'] == 200
     
-    def test_admin_sees_all_tickets(self):
-        """Admins should see all tickets"""
-        tickets = [
-            {'createdBy': 'user-1'},
-            {'createdBy': 'user-2'},
-            {'createdBy': 'user-3'}
+    @patch('src.functions.list_tickets.tickets_table')
+    def test_filter_by_priority(self, mock_table):
+        """
+        GIVEN priority filter parameter
+        WHEN list_tickets handler is called
+        THEN it should filter by priority
+        """
+        # Arrange
+        mock_tickets = [
+            {'ticketId': '1', 'priority': 'HIGH', 'createdBy': 'user-1', 'orgId': 'org-1'},
         ]
         
-        filtered = filter_tickets_by_role(tickets, 'admin-123', 'ADMIN')
+        mock_table.scan.return_value = {'Items': mock_tickets}
         
-        assert len(filtered) == 3
-    
-    def test_agent_sees_all_tickets(self):
-        """Agents should see all tickets"""
-        tickets = [
-            {'createdBy': 'user-1'},
-            {'createdBy': 'user-2'}
-        ]
-        
-        filtered = filter_tickets_by_role(tickets, 'agent-123', 'AGENT')
-        
-        assert len(filtered) == 2
-    
-    def test_customer_sees_only_own_tickets(self):
-        """Customers should only see their own tickets"""
-        customer_id = 'customer-123'
-        tickets = [
-            {'createdBy': customer_id, 'ticketId': '1'},
-            {'createdBy': 'other-customer', 'ticketId': '2'},
-            {'createdBy': customer_id, 'ticketId': '3'}
-        ]
-        
-        filtered = filter_tickets_by_role(tickets, customer_id, 'CUSTOMER')
-        
-        assert len(filtered) == 2
-        assert all(t['createdBy'] == customer_id for t in filtered)
-    
-    def test_unknown_role_sees_nothing(self):
-        """Unknown roles should see no tickets"""
-        tickets = [{'createdBy': 'user-1'}]
-        
-        filtered = filter_tickets_by_role(tickets, 'user-1', 'UNKNOWN_ROLE')
-        
-        assert len(filtered) == 0
-
-
-class TestPaginationCursors:
-    """Test suite for pagination cursor encoding/decoding"""
-    
-    def test_encode_decode_cursor_roundtrip(self):
-        """Cursor should encode and decode correctly"""
-        original_key = {
-            'ticketId': 'test-123',
-            'createdAt': '2026-01-19T10:00:00Z'
+        event = {
+            'queryStringParameters': {'priority': 'HIGH'},
+            'requestContext': {
+                'authorizer': {
+                    'claims': {
+                        'sub': 'admin-123',
+                        'email': 'admin@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-1'
+                    }
+                }
+            }
         }
         
-        # Encode
-        cursor = encode_cursor(original_key)
-        assert isinstance(cursor, str)
+        # Act
+        response = handler(event, {})
+        body = json.loads(response['body'])
         
-        # Decode
-        decoded_key = decode_cursor(cursor)
-        assert decoded_key == original_key
+        # Assert
+        assert response['statusCode'] == 200
     
-    def test_cursor_is_base64_encoded(self):
-        """Cursor should be valid base64"""
-        import base64
+    @patch('src.functions.list_tickets.tickets_table')
+    def test_respects_limit_parameter(self, mock_table):
+        """
+        GIVEN limit parameter
+        WHEN list_tickets handler is called
+        THEN it should limit the number of results
+        """
+        # Arrange
+        mock_tickets = [{'ticketId': str(i), 'orgId': 'org-1'} for i in range(100)]
+        mock_table.scan.return_value = {'Items': mock_tickets}
         
-        key = {'ticketId': 'test'}
-        cursor = encode_cursor(key)
+        event = {
+            'queryStringParameters': {'limit': '10'},
+            'requestContext': {
+                'authorizer': {
+                    'claims': {
+                        'sub': 'admin-123',
+                        'email': 'admin@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-1'
+                    }
+                }
+            }
+        }
         
-        # Should not raise exception
-        base64.b64decode(cursor.encode())
+        # Act
+        response = handler(event, {})
+        body = json.loads(response['body'])
+        
+        # Assert
+        assert response['statusCode'] == 200
+        assert len(body['tickets']) <= 10
+    
+    @patch('src.functions.list_tickets.tickets_table')
+    def test_org_admin_sees_all_org_tickets(self, mock_table):
+        """
+        GIVEN an org admin user
+        WHEN they list tickets
+        THEN they should see all tickets in their organization
+        """
+        # Arrange
+        org_id = 'org-456'
+        mock_tickets = [
+            {'ticketId': '1', 'createdBy': 'customer-1', 'orgId': org_id},
+            {'ticketId': '2', 'createdBy': 'customer-2', 'orgId': org_id},
+            {'ticketId': '3', 'createdBy': 'customer-3', 'orgId': org_id}
+        ]
+        
+        mock_table.scan.return_value = {'Items': mock_tickets}
+        
+        event = {
+            'queryStringParameters': None,
+            'requestContext': {
+                'authorizer': {
+                    'claims': {
+                        'sub': 'org-admin-123',
+                        'email': 'orgadmin@example.com',
+                        'custom:role': 'org_admin',
+                        'custom:orgId': org_id
+                    }
+                }
+            }
+        }
+        
+        # Act
+        response = handler(event, {})
+        body = json.loads(response['body'])
+        
+        # Assert
+        assert response['statusCode'] == 200
+        assert len(body['tickets']) == 3

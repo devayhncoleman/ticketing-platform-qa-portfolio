@@ -1,127 +1,148 @@
 """
-Lambda handler for listing tickets with filters and pagination
-Updated: Uses Cognito JWT for real user authentication and role-based filtering
+Lambda handler for listing tickets
+ENHANCED: Multi-tenant support - filters tickets by organization
 """
 import json
 import os
-import base64
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List
 import boto3
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 
-# Import auth utilities
-from auth import extract_user_from_event, UserContext
+from auth import extract_user_from_event
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-table_name = os.environ.get('TICKETS_TABLE_NAME', 'dev-tickets')
-table = dynamodb.Table(table_name)
+tickets_table = dynamodb.Table(os.environ.get('TICKETS_TABLE', 'dev-tickets'))
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for GET /tickets
-    Lists tickets with optional filters, pagination, and role-based access
+    Lists tickets based on user role and organization membership
     
-    Query Parameters:
-        - status: Filter by status (uses StatusIndex GSI)
-        - assignedTo: Filter by assigned agent (uses AssignedToIndex GSI)
-        - limit: Max items per page (default 20, max 100)
-        - cursor: Pagination token for next page
-        
-    Authorization:
-        - ADMIN/AGENT: Can see all tickets
-        - CUSTOMER: Can only see their own tickets
+    Multi-tenant behavior:
+    - Platform admins: See all tickets (can filter by orgId query param)
+    - Org admins/Technicians: See all tickets in their organization
+    - Customers: See only their own tickets
+    
+    Query parameters:
+    - status: Filter by status (OPEN, IN_PROGRESS, RESOLVED, CLOSED)
+    - priority: Filter by priority (LOW, MEDIUM, HIGH, CRITICAL)
+    - assignedTo: Filter by assigned technician
+    - orgId: Filter by organization (platform_admin only)
+    - limit: Max items to return (default 50)
     """
     try:
-        # Extract authenticated user from Cognito JWT
         user = extract_user_from_event(event)
         
-        # Parse query parameters
+        # Get query parameters
         params = event.get('queryStringParameters') or {}
-        status_filter = params.get('status')
-        assigned_to_filter = params.get('assignedTo')
         
-        # Pagination
-        limit = min(int(params.get('limit', 20)), 100)
-        cursor = params.get('cursor')
+        # Determine which org's tickets to fetch
+        target_org_id = get_target_org_id(user, params)
         
-        # Decode cursor if provided
-        exclusive_start_key = None
-        if cursor:
-            try:
-                decoded = base64.b64decode(cursor).decode('utf-8')
-                exclusive_start_key = json.loads(decoded)
-            except Exception as e:
-                print(f"Invalid cursor: {e}")
-                return create_response(400, {'error': 'Invalid pagination cursor'})
+        # Build filter expression based on user role and org
+        filter_expression, expression_values = build_filter_expression(user, params, target_org_id)
         
-        # Build scan/query parameters
-        scan_kwargs = {
-            'Limit': limit
-        }
+        # Scan with filters (Note: For production, consider using GSI on orgId)
+        scan_kwargs = {}
+        if filter_expression:
+            scan_kwargs['FilterExpression'] = filter_expression
+        if expression_values:
+            scan_kwargs['ExpressionAttributeValues'] = expression_values
         
-        if exclusive_start_key:
-            scan_kwargs['ExclusiveStartKey'] = exclusive_start_key
-        
-        # Role-based filtering
-        if user.is_customer:
-            # Customers can only see their own tickets - use CreatedByIndex
-            scan_kwargs['IndexName'] = 'UserIndex'
-            scan_kwargs['KeyConditionExpression'] = Key('createdBy').eq(user.user_id)
-            
-            # Add status filter if provided
-            if status_filter:
-                scan_kwargs['FilterExpression'] = Attr('status').eq(status_filter.upper())
-            
-            response = table.query(**scan_kwargs)
-        
-        elif status_filter:
-            # Use StatusIndex GSI for status filtering
-            scan_kwargs['IndexName'] = 'StatusIndex'
-            scan_kwargs['KeyConditionExpression'] = Key('status').eq(status_filter.upper())
-            response = table.query(**scan_kwargs)
-        
-        elif assigned_to_filter:
-            # Use AssignedToIndex GSI for assigned agent filtering
-            scan_kwargs['IndexName'] = 'AssignedToIndex'
-            scan_kwargs['KeyConditionExpression'] = Key('assignedTo').eq(assigned_to_filter)
-            response = table.query(**scan_kwargs)
-        
-        else:
-            # Full table scan (admins/agents with no filters)
-            response = table.scan(**scan_kwargs)
-        
+        # Execute scan
+        response = tickets_table.scan(**scan_kwargs)
         tickets = response.get('Items', [])
         
-        # Build response with pagination
-        result = {
+        # Handle pagination if there's more data
+        while 'LastEvaluatedKey' in response:
+            scan_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+            response = tickets_table.scan(**scan_kwargs)
+            tickets.extend(response.get('Items', []))
+        
+        # Sort by createdAt descending (newest first)
+        tickets.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+        
+        # Apply limit
+        limit = int(params.get('limit', 50))
+        tickets = tickets[:limit]
+        
+        print(f"User {user.email} retrieved {len(tickets)} tickets (org: {target_org_id or 'all'})")
+        
+        return create_response(200, {
             'tickets': tickets,
             'count': len(tickets)
-        }
-        
-        # Add next cursor if more results exist
-        if 'LastEvaluatedKey' in response:
-            next_cursor = base64.b64encode(
-                json.dumps(response['LastEvaluatedKey']).encode('utf-8')
-            ).decode('utf-8')
-            result['nextCursor'] = next_cursor
-            result['hasMore'] = True
-        else:
-            result['hasMore'] = False
-        
-        print(f"User {user.email} (role: {user.role}) listed {len(tickets)} tickets")
-        return create_response(200, result)
+        })
         
     except ClientError as e:
         error_code = e.response['Error']['Code']
         print(f"DynamoDB error: {error_code} - {e}")
-        return create_response(500, {'error': 'Failed to list tickets'})
-        
+        return create_response(500, {'error': 'Failed to retrieve tickets'})
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         return create_response(500, {'error': 'Internal server error'})
+
+
+def get_target_org_id(user, params: Dict[str, str]) -> str:
+    """
+    Determine which organization's tickets to return.
+    
+    - Platform admins can specify orgId param or see all
+    - Others are limited to their own org
+    """
+    # Platform admins can filter by any org or see all
+    if user.is_platform_admin:
+        return params.get('orgId')  # None means all orgs
+    
+    # Everyone else is limited to their own org
+    return user.org_id
+
+
+def build_filter_expression(user, params: Dict[str, str], target_org_id: str):
+    """
+    Build DynamoDB filter expression based on user role and query params.
+    
+    Returns:
+        Tuple of (filter_expression, expression_attribute_values)
+    """
+    conditions = []
+    expression_values = {}
+    
+    # Multi-tenant filtering by orgId
+    if target_org_id:
+        conditions.append(Attr('orgId').eq(target_org_id))
+    
+    # Customer-specific filtering: only see own tickets
+    if user.is_customer:
+        conditions.append(Attr('createdBy').eq(user.user_id))
+    
+    # Status filter
+    if params.get('status'):
+        conditions.append(Attr('status').eq(params['status'].upper()))
+    
+    # Priority filter
+    if params.get('priority'):
+        conditions.append(Attr('priority').eq(params['priority'].upper()))
+    
+    # Assigned to filter
+    if params.get('assignedTo'):
+        conditions.append(Attr('assignedTo').eq(params['assignedTo']))
+    
+    # Category filter
+    if params.get('category'):
+        conditions.append(Attr('category').eq(params['category']))
+    
+    # Combine conditions with AND
+    if not conditions:
+        return None, None
+    
+    filter_expression = conditions[0]
+    for condition in conditions[1:]:
+        filter_expression = filter_expression & condition
+    
+    return filter_expression, expression_values
 
 
 def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:

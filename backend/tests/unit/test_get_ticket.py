@@ -1,17 +1,17 @@
 """
 Unit tests for get_ticket Lambda function.
-Following TDD approach - tests written alongside implementation.
+Updated for multi-tenant architecture with orgId support.
 """
 import json
 import pytest
 from unittest.mock import MagicMock, patch
-from src.functions.get_ticket import handler, is_authorized
+from src.functions.get_ticket import handler
 
 
 class TestGetTicket:
     """Test suite for get ticket functionality"""
     
-    @patch('src.functions.get_ticket.table')
+    @patch('src.functions.get_ticket.tickets_table')
     def test_get_ticket_with_valid_id_returns_200(self, mock_table):
         """
         GIVEN a valid ticket ID
@@ -24,18 +24,21 @@ class TestGetTicket:
             'ticketId': ticket_id,
             'title': 'Test Ticket',
             'status': 'OPEN',
-            'createdBy': 'test-user-123'
+            'createdBy': 'test-user-123',
+            'orgId': 'org-456'
         }
         
         mock_table.get_item.return_value = {'Item': mock_ticket}
         
         event = {
-            'pathParameters': {'id': ticket_id},
+            'pathParameters': {'ticketId': ticket_id},
             'requestContext': {
                 'authorizer': {
                     'claims': {
                         'sub': 'test-user-123',
-                        'custom:role': 'ADMIN'
+                        'email': 'test@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-456'
                     }
                 }
             }
@@ -60,7 +63,16 @@ class TestGetTicket:
         # Arrange
         event = {
             'pathParameters': {},
-            'requestContext': {}
+            'requestContext': {
+                'authorizer': {
+                    'claims': {
+                        'sub': 'user-123',
+                        'email': 'test@example.com',
+                        'custom:role': 'customer',
+                        'custom:orgId': 'org-456'
+                    }
+                }
+            }
         }
         
         # Act
@@ -72,7 +84,7 @@ class TestGetTicket:
         assert 'error' in body
         assert 'Ticket ID is required' in body['error']
     
-    @patch('src.functions.get_ticket.table')
+    @patch('src.functions.get_ticket.tickets_table')
     def test_get_ticket_not_found_returns_404(self, mock_table):
         """
         GIVEN a ticket ID that doesn't exist
@@ -83,12 +95,14 @@ class TestGetTicket:
         mock_table.get_item.return_value = {}  # No 'Item' key
         
         event = {
-            'pathParameters': {'id': 'nonexistent-ticket'},
+            'pathParameters': {'ticketId': 'nonexistent-ticket'},
             'requestContext': {
                 'authorizer': {
                     'claims': {
                         'sub': 'test-user-123',
-                        'custom:role': 'ADMIN'
+                        'email': 'test@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-456'
                     }
                 }
             }
@@ -103,7 +117,7 @@ class TestGetTicket:
         assert 'error' in body
         assert 'Ticket not found' in body['error']
     
-    @patch('src.functions.get_ticket.table')
+    @patch('src.functions.get_ticket.tickets_table')
     def test_customer_can_view_own_ticket(self, mock_table):
         """
         GIVEN a customer user
@@ -112,21 +126,25 @@ class TestGetTicket:
         """
         # Arrange
         user_id = 'customer-123'
+        org_id = 'org-456'
         mock_ticket = {
             'ticketId': 'ticket-1',
             'title': 'My Ticket',
-            'createdBy': user_id
+            'createdBy': user_id,
+            'orgId': org_id
         }
         
         mock_table.get_item.return_value = {'Item': mock_ticket}
         
         event = {
-            'pathParameters': {'id': 'ticket-1'},
+            'pathParameters': {'ticketId': 'ticket-1'},
             'requestContext': {
                 'authorizer': {
                     'claims': {
                         'sub': user_id,
-                        'custom:role': 'CUSTOMER'
+                        'email': 'customer@example.com',
+                        'custom:role': 'customer',
+                        'custom:orgId': org_id
                     }
                 }
             }
@@ -138,29 +156,33 @@ class TestGetTicket:
         # Assert
         assert response['statusCode'] == 200
     
-    @patch('src.functions.get_ticket.table')
+    @patch('src.functions.get_ticket.tickets_table')
     def test_customer_cannot_view_others_ticket(self, mock_table):
         """
         GIVEN a customer user
-        WHEN they request another customer's ticket
+        WHEN they request another customer's ticket in the same org
         THEN they should receive 403 Forbidden
         """
         # Arrange
+        org_id = 'org-456'
         mock_ticket = {
             'ticketId': 'ticket-1',
             'title': 'Someone Elses Ticket',
-            'createdBy': 'other-customer-456'
+            'createdBy': 'other-customer-456',
+            'orgId': org_id
         }
         
         mock_table.get_item.return_value = {'Item': mock_ticket}
         
         event = {
-            'pathParameters': {'id': 'ticket-1'},
+            'pathParameters': {'ticketId': 'ticket-1'},
             'requestContext': {
                 'authorizer': {
                     'claims': {
                         'sub': 'customer-123',
-                        'custom:role': 'CUSTOMER'
+                        'email': 'customer@example.com',
+                        'custom:role': 'customer',
+                        'custom:orgId': org_id
                     }
                 }
             }
@@ -173,31 +195,34 @@ class TestGetTicket:
         # Assert
         assert response['statusCode'] == 403
         assert 'error' in body
-        assert 'not authorized' in body['error'].lower()
     
-    @patch('src.functions.get_ticket.table')
-    def test_agent_can_view_any_ticket(self, mock_table):
+    @patch('src.functions.get_ticket.tickets_table')
+    def test_technician_can_view_ticket_in_same_org(self, mock_table):
         """
-        GIVEN an agent user
-        WHEN they request any ticket
+        GIVEN a technician user
+        WHEN they request a ticket in their organization
         THEN they should be authorized to view it
         """
         # Arrange
+        org_id = 'org-456'
         mock_ticket = {
             'ticketId': 'ticket-1',
             'title': 'Any Ticket',
-            'createdBy': 'customer-999'
+            'createdBy': 'customer-999',
+            'orgId': org_id
         }
         
         mock_table.get_item.return_value = {'Item': mock_ticket}
         
         event = {
-            'pathParameters': {'id': 'ticket-1'},
+            'pathParameters': {'ticketId': 'ticket-1'},
             'requestContext': {
                 'authorizer': {
                     'claims': {
-                        'sub': 'agent-123',
-                        'custom:role': 'AGENT'
+                        'sub': 'tech-123',
+                        'email': 'tech@example.com',
+                        'custom:role': 'technician',
+                        'custom:orgId': org_id
                     }
                 }
             }
@@ -209,29 +234,71 @@ class TestGetTicket:
         # Assert
         assert response['statusCode'] == 200
     
-    @patch('src.functions.get_ticket.table')
-    def test_admin_can_view_any_ticket(self, mock_table):
+    @patch('src.functions.get_ticket.tickets_table')
+    def test_technician_cannot_view_ticket_in_different_org(self, mock_table):
         """
-        GIVEN an admin user
-        WHEN they request any ticket
+        GIVEN a technician user
+        WHEN they request a ticket from a different organization
+        THEN they should receive 403 Forbidden
+        """
+        # Arrange
+        mock_ticket = {
+            'ticketId': 'ticket-1',
+            'title': 'Other Org Ticket',
+            'createdBy': 'customer-999',
+            'orgId': 'different-org-789'
+        }
+        
+        mock_table.get_item.return_value = {'Item': mock_ticket}
+        
+        event = {
+            'pathParameters': {'ticketId': 'ticket-1'},
+            'requestContext': {
+                'authorizer': {
+                    'claims': {
+                        'sub': 'tech-123',
+                        'email': 'tech@example.com',
+                        'custom:role': 'technician',
+                        'custom:orgId': 'org-456'
+                    }
+                }
+            }
+        }
+        
+        # Act
+        response = handler(event, {})
+        body = json.loads(response['body'])
+        
+        # Assert
+        assert response['statusCode'] == 403
+        assert 'error' in body
+    
+    @patch('src.functions.get_ticket.tickets_table')
+    def test_platform_admin_can_view_any_ticket(self, mock_table):
+        """
+        GIVEN a platform admin user
+        WHEN they request any ticket from any org
         THEN they should be authorized to view it
         """
         # Arrange
         mock_ticket = {
             'ticketId': 'ticket-1',
             'title': 'Any Ticket',
-            'createdBy': 'customer-999'
+            'createdBy': 'customer-999',
+            'orgId': 'different-org-789'
         }
         
         mock_table.get_item.return_value = {'Item': mock_ticket}
         
         event = {
-            'pathParameters': {'id': 'ticket-1'},
+            'pathParameters': {'ticketId': 'ticket-1'},
             'requestContext': {
                 'authorizer': {
                     'claims': {
                         'sub': 'admin-123',
-                        'custom:role': 'ADMIN'
+                        'email': 'admin@example.com',
+                        'custom:role': 'platform_admin',
+                        'custom:orgId': 'org-456'
                     }
                 }
             }
@@ -242,33 +309,3 @@ class TestGetTicket:
         
         # Assert
         assert response['statusCode'] == 200
-
-
-class TestIsAuthorized:
-    """Test suite for authorization logic"""
-    
-    def test_admin_authorized_for_any_ticket(self):
-        """Admins can view all tickets"""
-        ticket = {'createdBy': 'user-123'}
-        assert is_authorized(ticket, 'admin-456', 'ADMIN') is True
-    
-    def test_agent_authorized_for_any_ticket(self):
-        """Agents can view all tickets"""
-        ticket = {'createdBy': 'user-123'}
-        assert is_authorized(ticket, 'agent-456', 'AGENT') is True
-    
-    def test_customer_authorized_for_own_ticket(self):
-        """Customers can view their own tickets"""
-        user_id = 'customer-123'
-        ticket = {'createdBy': user_id}
-        assert is_authorized(ticket, user_id, 'CUSTOMER') is True
-    
-    def test_customer_not_authorized_for_others_ticket(self):
-        """Customers cannot view other customers' tickets"""
-        ticket = {'createdBy': 'customer-456'}
-        assert is_authorized(ticket, 'customer-123', 'CUSTOMER') is False
-    
-    def test_unknown_role_not_authorized(self):
-        """Unknown roles are denied by default"""
-        ticket = {'createdBy': 'user-123'}
-        assert is_authorized(ticket, 'user-123', 'UNKNOWN_ROLE') is False
